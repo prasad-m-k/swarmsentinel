@@ -1,0 +1,274 @@
+format: "replit.sdm"
+version: 1
+size:
+  width: 1920
+  height: 1080
+background:
+  kind: "solid"
+  color:
+    kind: "token"
+    token: "background"
+theme:
+  colors:
+    background: "#0c1118"
+    foreground: "#e0e6eb"
+    surface: "#121821"
+    muted: "#919dac"
+    accent: "#29bc86"
+    border: "#222a35"
+    danger: "#e74640"
+  fonts:
+    display: "IBM Plex Sans"
+    body: "IBM Plex Sans"
+    mono: "JetBrains Mono"
+elements:
+  - 
+    id: "titleAccent"
+    type: "shape"
+    frame:
+      x: 120
+      y: 90
+      width: 72
+      height: 6
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "accent"
+      opacity: 1
+  - 
+    id: "title"
+    type: "text"
+    frame:
+      x: 120
+      y: 130
+      width: 1680
+      height: 140
+    body:
+      paragraphs:
+        - 
+          runs:
+            - 
+              text: "Architecture: tripwire feedback"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "display"
+            sizePt: 38
+            weight: 600
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.1
+          spaceAfterPt: 0
+  - 
+    id: "footerRule"
+    type: "shape"
+    frame:
+      x: 120
+      y: 1013
+      width: 1680
+      height: 2
+    geometry:
+      kind: "preset"
+      preset: "rect"
+    fill:
+      kind: "solid"
+      color:
+        kind: "token"
+        token: "border"
+      opacity: 1
+  - 
+    id: "footer"
+    type: "text"
+    frame:
+      x: 120
+      y: 1028
+      width: 850
+      height: 40
+    body:
+      paragraphs:
+        - 
+          runs:
+            - 
+              text: "SwarmSentinel"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "mono"
+            sizePt: 15
+            weight: 400
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.2
+          spaceAfterPt: 0
+  - 
+    id: "page"
+    type: "text"
+    frame:
+      x: 1670
+      y: 1028
+      width: 130
+      height: 40
+    body:
+      paragraphs:
+        - 
+          runs:
+            - 
+              text: "07 / 08"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "mono"
+            sizePt: 15
+            weight: 400
+            color:
+              kind: "token"
+              token: "muted"
+          lineHeight: 1.2
+          spaceAfterPt: 0
+  - 
+    id: "architecture"
+    type: "widget"
+    frame:
+      x: 120
+      y: 280
+      width: 1680
+      height: 230
+    widget:
+      module: "./widgets/ArchitectureFlow.tsx"
+      sizing: "fill"
+      props:
+        background: "#0c1118"
+        foreground: "#e0e6eb"
+        surface: "#121821"
+        muted: "#919dac"
+        accent: "#29bc86"
+        border: "#222a35"
+        danger: "#e74640"
+        fontFamily: "IBM Plex Sans"
+        mode: "feedback"
+  - 
+    id: "body"
+    type: "text"
+    frame:
+      x: 120
+      y: 550
+      width: 1680
+      height: 440
+    body:
+      paragraphs:
+        - 
+          runs:
+            - 
+              text: "Detect dense reciprocal communication, coordinated wiki edits, and excessive fan-out"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            weight: 400
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.2
+          spaceAfterPt: 8
+          bullet:
+            kind: "character"
+            character: "•"
+          markerStyle:
+            color:
+              kind: "token"
+              token: "accent"
+        - 
+          runs:
+            - 
+              text: "Identify the agents involved in each detected pattern"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            weight: 400
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.2
+          spaceAfterPt: 8
+          bullet:
+            kind: "character"
+            character: "•"
+          markerStyle:
+            color:
+              kind: "token"
+              token: "accent"
+        - 
+          runs:
+            - 
+              text: "Record a versioned revocation policy when feedback is enabled"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            weight: 400
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.2
+          spaceAfterPt: 8
+          bullet:
+            kind: "character"
+            character: "•"
+          markerStyle:
+            color:
+              kind: "token"
+              token: "accent"
+        - 
+          runs:
+            - 
+              text: "Drop subsequent in-band calls from revoked agents and their descendants"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            weight: 400
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.2
+          spaceAfterPt: 8
+          bullet:
+            kind: "character"
+            character: "•"
+          markerStyle:
+            color:
+              kind: "token"
+              token: "accent"
+        - 
+          runs:
+            - 
+              text: "Continue observing out-of-band activity; do not claim to undo it"
+          defaultRunStyle:
+            font:
+              kind: "token"
+              token: "body"
+            sizePt: 21
+            weight: 400
+            color:
+              kind: "token"
+              token: "foreground"
+          lineHeight: 1.2
+          spaceAfterPt: 8
+          bullet:
+            kind: "character"
+            character: "•"
+          markerStyle:
+            color:
+              kind: "token"
+              token: "accent"

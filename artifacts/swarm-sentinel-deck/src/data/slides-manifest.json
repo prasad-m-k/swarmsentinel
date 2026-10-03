@@ -1,0 +1,74 @@
+[
+  {
+    "id": "cover",
+    "position": 1,
+    "kind": "sdm",
+    "filepath": "src/data/slides/cover.sdm.yaml",
+    "title": "SwarmSentinel",
+    "description": "AI Swarm Dynamics Hackathon; ASP-inspired runtime policies + a multi-agent incident flight recorder",
+    "speakerNotes": ""
+  },
+  {
+    "id": "problem",
+    "position": 2,
+    "kind": "sdm",
+    "filepath": "src/data/slides/problem.sdm.yaml",
+    "title": "Problem: runaway coordination",
+    "description": "Recursive delegation expands the number of active agents; Repeated consensus messages reinforce execution loops; Shared resources receive duplicate or excessive writes; Per-agent logs make system-level patterns hard to reconstruct",
+    "speakerNotes": ""
+  },
+  {
+    "id": "approach",
+    "position": 3,
+    "kind": "sdm",
+    "filepath": "src/data/slides/approach.sdm.yaml",
+    "title": "Approach: containment with evidence",
+    "description": "Evaluate in-band calls before simulated execution; Observe shared-state activity outside the gateway; Detect coordination patterns across the interaction graph; Feed tripwire decisions back into runtime policy; Preserve a forensic record of actions and interventions",
+    "speakerNotes": ""
+  },
+  {
+    "id": "gateway",
+    "position": 4,
+    "kind": "sdm",
+    "filepath": "src/data/slides/gateway.sdm.yaml",
+    "title": "Design: runtime policy gateway",
+    "description": "Admit agent identities and validate parent-span lineage; Default recursion-depth cap: 4 hops; Throttle the fifth matching intent and target across at least 3 agent IDs within 10 seconds; Default mock-write cap: 6 writes per target per 10 seconds; Deny tools outside the explicit mock allowlist",
+    "speakerNotes": ""
+  },
+  {
+    "id": "recorder",
+    "position": 5,
+    "kind": "sdm",
+    "filepath": "src/data/slides/recorder.sdm.yaml",
+    "title": "Design: flight recorder and dashboard",
+    "description": "Capture actor, parent, span, intent, target, decision, and policy version; Distinguish allowed, throttled, dropped, and out-of-band observed events; Show executed interactions separately from blocked attempts; Replay the directed graph and enforcement feed through a timeline; Export Markdown reports and provenance-aware JSON traces",
+    "speakerNotes": ""
+  },
+  {
+    "id": "pipeline",
+    "position": 6,
+    "kind": "sdm",
+    "filepath": "src/data/slides/pipeline.sdm.yaml",
+    "title": "Architecture: processing pipeline",
+    "description": "Simulator produces synthetic agent calls and shared-state observations; ASP gateway evaluates calls and emits structured telemetry; Sentinel builds the directed graph and detects coordination; Reporter summarizes lineage, affected resources, timeline, and interventions; React + Tailwind dashboard consumes the Python FastAPI engine",
+    "speakerNotes": ""
+  },
+  {
+    "id": "feedback",
+    "position": 7,
+    "kind": "sdm",
+    "filepath": "src/data/slides/feedback.sdm.yaml",
+    "title": "Architecture: tripwire feedback",
+    "description": "Detect dense reciprocal communication, coordinated wiki edits, and excessive fan-out; Identify the agents involved in each detected pattern; Record a versioned revocation policy when feedback is enabled; Drop subsequent in-band calls from revoked agents and their descendants; Continue observing out-of-band activity; do not claim to undo it",
+    "speakerNotes": ""
+  },
+  {
+    "id": "boundaries",
+    "position": 8,
+    "kind": "sdm",
+    "filepath": "src/data/slides/boundaries.sdm.yaml",
+    "title": "Architecture: prototype boundaries",
+    "description": "FastAPI + Pydantic validate requests; NetworkX analyzes interactions; NumPy supports deterministic intent fingerprints, not semantic embeddings; Tools and agent actions are synthetic mocks; no external execution; Policy and recorder are separate modules in one prototype process; Production hardening would require isolated enforcement and durable telemetry",
+    "speakerNotes": ""
+  }
+]

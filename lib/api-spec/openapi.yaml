@@ -1,0 +1,115 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /swarm/simulate:
+    post:
+      operationId: simulateSwarm
+      tags: [swarm]
+      summary: Run a deterministic synthetic swarm through ASP and Sentinel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunInput"
+      responses:
+        "200":
+          description: Recorded simulation and forensic report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwarmRun"
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  schemas:
+    RunInput:
+      type: object
+      required: [scenario, feedbackEnabled]
+      properties:
+        scenario: { type: string, enum: [normal, attack] }
+        feedbackEnabled: { type: boolean }
+        maxDepth: { type: integer, minimum: 1, maximum: 10, default: 4 }
+        semanticLimit: { type: integer, minimum: 2, maximum: 20, default: 5 }
+        writeLimit: { type: integer, minimum: 1, maximum: 30, default: 6 }
+    Trace:
+      type: object
+      required: [id, timestamp, agentId, parentId, spanId, parentSpanId, action, channel, target, intent, intentVector, depth, decision, rule, reason, executed, policyVersion]
+      properties:
+        id: { type: string }
+        timestamp: { type: string }
+        agentId: { type: string }
+        parentId: { type: string }
+        spanId: { type: string }
+        parentSpanId: { type: string }
+        action: { type: string, enum: [spawn, tool, message, wiki_edit] }
+        channel: { type: string, enum: [in_band, out_of_band] }
+        target: { type: string }
+        intent: { type: string }
+        intentVector: { type: array, items: { type: number } }
+        depth: { type: integer }
+        decision: { type: string, enum: [allow, throttle, drop, observed] }
+        rule: { type: string }
+        reason: { type: string }
+        executed: { type: boolean }
+        policyVersion: { type: integer }
+    SwarmAlert:
+      type: object
+      required: [id, timestamp, kind, reason, agents, eventId]
+      properties:
+        id: { type: string }
+        timestamp: { type: string }
+        kind: { type: string }
+        reason: { type: string }
+        agents: { type: array, items: { type: string } }
+        eventId: { type: string }
+    PolicyChange:
+      type: object
+      required: [timestamp, version, blockedAgents, reason]
+      properties:
+        timestamp: { type: string }
+        version: { type: integer }
+        blockedAgents: { type: array, items: { type: string } }
+        reason: { type: string }
+    SwarmRun:
+      type: object
+      required: [id, scenario, provenance, events, alerts, policies, report, rootAgent, startedAt]
+      properties:
+        id: { type: string }
+        scenario: { type: string }
+        provenance: { type: string }
+        events: { type: array, items: { $ref: "#/components/schemas/Trace" } }
+        alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
+        policies: { type: array, items: { $ref: "#/components/schemas/PolicyChange" } }
+        report: { type: string }
+        rootAgent: { type: string }
+        startedAt: { type: string }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+

@@ -1,0 +1,45 @@
+kind = "web"
+previewPath = "/"
+title = "SwarmSentinel"
+description = "AI Swarm Dynamics Hackathon — a Python FastAPI prototype combining ASP policy enforcement with a multi-agent flight recorder and interactive forensic dashboard using synthetic samples."
+version = "1.0.0"
+id = "artifacts/swarm-sentinel"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18947
+
+[services.development]
+run = "pnpm --filter @workspace/swarm-sentinel run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/swarm-sentinel", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/swarm-sentinel/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18947"
+BASE_PATH = "/"
+
+[[services]]
+name = "engine"
+paths = [ "/api/swarm" ]
+localPort = 8000
+
+[services.development]
+run = "pnpm --filter @workspace/swarm-sentinel run engine"
+
+[services.production.run]
+args = [ "python", "-m", "uvicorn", "server:app", "--app-dir", "artifacts/swarm-sentinel/python", "--host", "0.0.0.0", "--port", "8000" ]
+
+[services.production.health.startup]
+path = "/api/swarm/health"
+
+[services.env]
+PORT = "8000"

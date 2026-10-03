@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/swarm-sentinel-deck/"
+title = "SwarmSentinel — Problem, Approach & Architecture"
+description = "Eight-slide initial hackathon presentation of SwarmSentinel's problem, ASP-inspired approach, dashboard design, processing architecture and prototype boundaries. Uses confirmed copy; datasets deferred."
+version = "1.0.0"
+id = "artifacts/swarm-sentinel-deck"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/swarm-sentinel-deck/" ]
+localPort = 25392
+
+[services.development]
+run = "pnpm --filter @workspace/swarm-sentinel-deck run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/swarm-sentinel-deck", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/swarm-sentinel-deck/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25392"
+BASE_PATH = "/swarm-sentinel-deck/"
