@@ -2,8 +2,9 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from asp_policy import ASPPolicy
+from live import CallInput, SessionInput, SessionStore
 from models import RunInput
 from pipeline import replay, summarize
 from reporter import markdown_report
@@ -15,6 +16,8 @@ app = FastAPI(title="SwarmSentinel Python Engine", docs_url="/api/swarm/docs",
 
 SYNTHETIC = "Synthetic sample traces. Not AI Village data or a real incident replay."
 VILLAGE = "AI Village dataset replay (historical records, report-only). Decisions are counterfactual."
+LIVE = "Live session: each call was decided before the calling agent executed it."
+SESSIONS = SessionStore()
 
 
 def _village_db():
@@ -77,12 +80,51 @@ def simulate(settings: RunInput):
         samples = Path(__file__).parent / "samples" / f"{settings.scenario}.json"
         events, window = json.loads(samples.read_text()), None
         gateway, sentinel = replay(events, settings, policy)
-    run = dict(id=str(uuid4()), scenario=settings.scenario, source="ai-village" if village else "synthetic",
-               provenance=VILLAGE if village else SYNTHETIC, mode=gateway.mode,
-               rootAgent=gateway.root, startedAt=events[0]["timestamp"], window=window,
+    return _run(str(uuid4()), settings.scenario, "ai-village" if village else "synthetic", VILLAGE if village else SYNTHETIC,
+                gateway, sentinel, policy_name, policy, settings, events[0]["timestamp"], window)
+
+
+def _run(run_id, scenario, source, provenance, gateway, sentinel, policy_name, policy, settings, started_at, window=None):
+    run = dict(id=run_id, scenario=scenario, source=source, provenance=provenance, mode=gateway.mode,
+               rootAgent=gateway.root, startedAt=started_at, window=window,
                policyName=policy_name, policy=policy.declaration(),
                events=[t.model_dump() for t in gateway.telemetry],
                alerts=sentinel.alerts, policies=sentinel.policy_changes, edges=sentinel.weighted_edges(),
                summary=summarize(gateway.telemetry, sentinel.alerts))
     run["report"] = markdown_report(run, settings)
     return run
+
+
+def _session(session_id):
+    session = SESSIONS.get(session_id)
+    if session is None:
+        raise HTTPException(404, f"Unknown or expired session {session_id}")
+    return session
+
+
+@app.post("/api/swarm/sessions", status_code=201)
+def create_session(spec: SessionInput):
+    session = SESSIONS.create(spec)
+    return {"sessionId": session.id, "policyName": spec.policy, "root": spec.root,
+            "feedbackEnabled": spec.feedbackEnabled, "policy": session.policy.declaration()}
+
+
+@app.post("/api/swarm/sessions/{session_id}/evaluate")
+def evaluate(session_id: str, call: CallInput):
+    """Decide one proposed action before the agent runs it. allowed=false means: do not execute."""
+    return _session(session_id).evaluate(call)
+
+
+@app.get("/api/swarm/sessions/{session_id}")
+def session_run(session_id: str):
+    s = _session(session_id)
+    with s.lock:
+        started = s.gateway.telemetry[0].timestamp if s.gateway.telemetry else s.created
+        return _run(s.id, "live", "live", LIVE, s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started)
+
+
+@app.delete("/api/swarm/sessions/{session_id}", status_code=204)
+def delete_session(session_id: str):
+    if not SESSIONS.delete(session_id):
+        raise HTTPException(404, f"Unknown or expired session {session_id}")
+    return Response(status_code=204)

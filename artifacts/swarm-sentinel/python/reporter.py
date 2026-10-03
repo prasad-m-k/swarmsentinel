@@ -74,6 +74,11 @@ def markdown_report(run, settings):
             "- Behaviour shifts across the 2026-03-24 perma-computer-use change reflect scaffolding, not only agent behaviour. Read the dataset CHANGELOG before comparing periods.",
             "- No sub-agent spawning exists in this export, so recursion-depth and fan-out tripwires cannot fire on it.",
         ]
+    elif run["source"] == "live":
+        lines += [
+            "- Live session: each decision was returned to the calling agent before it acted. Enforcement relies on the caller honouring it; the SwarmSentinel guard wrapper refuses to run a denied call.",
+            "- The gateway runs in the engine process, not an isolated boundary the agent cannot reach.",
+        ]
     else:
         lines += [
             "- Out-of-band edits and messages are observations, not intercepted tool calls. Revocation affects subsequent in-band mock calls only.",

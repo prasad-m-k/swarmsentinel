@@ -82,6 +82,7 @@ export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
 export const TraceSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
+  live: 'live',
 } as const;
 
 export type TraceReads = typeof TraceReads[keyof typeof TraceReads];
@@ -169,6 +170,7 @@ export type SwarmRunSource = typeof SwarmRunSource[keyof typeof SwarmRunSource];
 export const SwarmRunSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
+  live: 'live',
 } as const;
 
 export type SwarmRunMode = typeof SwarmRunMode[keyof typeof SwarmRunMode];
@@ -291,6 +293,93 @@ export type SwarmSourcesPolicies = {[key: string]: { [key: string]: unknown }};
 export interface SwarmSources {
   aiVillage: VillageSource;
   policies: SwarmSourcesPolicies;
+}
+
+export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];
+
+
+export const SessionInputPolicy = {
+  mock: 'mock',
+  'ai-village': 'ai-village',
+} as const;
+
+export interface SessionInput {
+  policy?: SessionInputPolicy;
+  feedbackEnabled?: boolean;
+  root?: string;
+}
+
+export type SessionCreatedPolicy = { [key: string]: unknown };
+
+export interface SessionCreated {
+  sessionId: string;
+  policyName: string;
+  root: string;
+  feedbackEnabled: boolean;
+  policy: SessionCreatedPolicy;
+}
+
+export type CallInputAction = typeof CallInputAction[keyof typeof CallInputAction];
+
+
+export const CallInputAction = {
+  spawn: 'spawn',
+  tool: 'tool',
+  message: 'message',
+} as const;
+
+export type CallInputReads = typeof CallInputReads[keyof typeof CallInputReads];
+
+
+export const CallInputReads = {
+  '': '',
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  untrusted: 'untrusted',
+} as const;
+
+export interface CallInput {
+  agentId: string;
+  action: CallInputAction;
+  target: string;
+  intent?: string;
+  parentId?: string;
+  spanId: string;
+  parentSpanId?: string;
+  detail?: string;
+  network?: string;
+  reads?: CallInputReads;
+  /** @nullable */
+  write?: boolean | null;
+  resource?: string;
+  mentions?: string[];
+  scope?: string[];
+  /** @nullable */
+  timestamp?: string | null;
+}
+
+export type CallDecisionDecision = typeof CallDecisionDecision[keyof typeof CallDecisionDecision];
+
+
+export const CallDecisionDecision = {
+  allow: 'allow',
+  throttle: 'throttle',
+  drop: 'drop',
+  observed: 'observed',
+} as const;
+
+export interface CallDecision {
+  eventId: string;
+  allowed: boolean;
+  decision: CallDecisionDecision;
+  rule: string;
+  reason: string;
+  policyVersion: number;
+  taintOrigin: string;
+  violations: Violation[];
+  alerts: SwarmAlert[];
+  evaluationMs: number;
 }
 
 export interface HealthStatus {

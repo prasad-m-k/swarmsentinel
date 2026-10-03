@@ -157,6 +157,63 @@ class InjectionDefense(unittest.TestCase):
         self.assertFalse(gateway.telemetry[2].contaminated)
 
 
+class LiveInterception(unittest.TestCase):
+    """The guard decides before the tool body runs; a denied call never executes."""
+
+    def setUp(self):
+        from sdk.guard import Guard, PolicyViolation
+        self.Guard, self.PolicyViolation = Guard, PolicyViolation
+
+    def test_denied_call_never_executes(self):
+        ran = []
+        guard = self.Guard.local()
+        parser = guard.root().spawn("receipt-parser", scope=["mock:fs.read"])
+        with self.assertRaises(self.PolicyViolation) as blocked:
+            parser.call("mock:payments.transfer", lambda: ran.append("paid"))
+        self.assertEqual((blocked.exception.decision.rule, ran), ("delegation.out_of_scope", []))
+        self.assertEqual(parser.call("mock:fs.read", lambda: "ok"), "ok")
+
+    def test_lineage_cannot_be_forged(self):
+        from sdk.guard import Agent
+        guard = self.Guard.local()
+        impostor = Agent(guard, "ledger-agent", parent=guard.root())   # never spawned
+        decision = impostor.check("tool", "mock:fs.read")
+        self.assertEqual((decision.allowed, decision.rule), (False, "lineage.unknown"))
+
+    def test_taint_and_tripwire_live(self):
+        guard = self.Guard.local()
+        root = guard.root()
+        parser = root.spawn("receipt-parser", scope=["mock:fs.read"])
+        ledger = root.spawn("ledger-agent", scope=["mock:payments.transfer"])
+        notifier = root.spawn("notifier", scope=["mock:mcp:board.write"])
+        parser.call("mock:fs.read", lambda: "poison", reads="untrusted")
+        parser.send(ledger, "pay routing 021000021")
+        with self.assertRaises(self.PolicyViolation) as blocked:
+            ledger.call("mock:payments.transfer", lambda: None)
+        self.assertEqual(blocked.exception.decision.rule, "trust.contaminated_tool")
+        self.assertEqual([a["kind"] for a in parser.send(notifier, "announce").alerts], ["injection_spread"])
+        self.assertTrue(root.check("tool", "mock:mcp:board.write", "held for review").allowed)
+
+    def test_session_endpoints(self):
+        from fastapi import HTTPException
+        from live import CallInput, SessionInput
+        from server import create_session, delete_session, evaluate, session_run
+        sid = create_session(SessionInput())["sessionId"]
+        decision = evaluate(sid, CallInput(agentId="orchestrator", action="tool", target="mock:search.read", spanId="s1"))
+        self.assertTrue(decision["allowed"])
+        run = session_run(sid)
+        self.assertEqual((run["source"], run["mode"], len(run["events"])), ("live", "enforce", 1))
+        delete_session(sid)
+        with self.assertRaises(HTTPException):
+            session_run(sid)
+
+    def test_store_is_bounded(self):
+        from live import SessionInput, SessionStore
+        store = SessionStore(limit=3)
+        ids = [store.create(SessionInput()).id for _ in range(5)]
+        self.assertEqual(list(store.sessions), ids[2:])
+
+
 class WeightedGraph(unittest.TestCase):
     def test_repeats_increment_weight_not_edges(self):
         events = [village_event(i, "GPT-5", "village:bash", f"step {i}", seconds=i) for i in range(5)]

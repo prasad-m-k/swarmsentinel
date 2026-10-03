@@ -40,6 +40,7 @@ The goal is **containment with evidence**, rather than assuming that an agent's 
 
 - **Three synthetic scenarios**, evaluated in enforce mode: a normal run (15 events), a swarm attack (41) and a prompt-injection attack (14).
 - **Prompt-injection defense:** the injection scenario follows the ASP paper's Simulation A. A sub-agent reads a poisoned invoice that tells it to move money, and four layers stop it in turn: its delegated scope, the ban on widening scope when spawning, taint propagated to the agents it messages (which withdraws their payment capability), and an injection-spread tripwire that revokes the compromised branch while clean agents keep working.
+- **Live interception:** a session API decides each agent action before it runs, and a dependency-free Python guard (`@agent.tool(...)`, `agent.call(...)`) refuses to execute denied calls. Lineage is tracked by the guard and verified by the gateway. Measured overhead on an Apple M2: p50 0.025 ms in-process, 0.40 ms over localhost HTTP.
 - **Threat model:** [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) maps each threat vector to its controls, evidence and status, including what is not covered.
 - **AI Village replay:** 1.23M normalized events from the 2026-09-20 export (chat, computer-use shell and tool actions, Claude Code tool calls), replayed in report-only mode by time window or indexed episode.
 - **Machine-readable ASP policies:** JSON declarations following the paper's schema (`network`, `tools`, `content-trust`, `delegation`, `reporting`) plus a `swarm` extension for rate limits and tripwire thresholds. See `artifacts/swarm-sentinel/python/policies/`.
@@ -176,7 +177,36 @@ Open **http://localhost:5173/**. Keep the engine terminal running.
 
 Both Vite configuration variables are required, including during builds. `BASE_PATH=/` places the dashboard at the site root.
 
-### 4. Real data (AI Village)
+### 4. Live interception
+
+Agents ask the gateway before acting. Copy `artifacts/swarm-sentinel/python/sdk/guard.py` into an agent project (standard library only), or run in-process next to the engine:
+
+```python
+from sdk.guard import Guard, PolicyViolation
+
+guard = Guard.remote("http://127.0.0.1:8000")          # or Guard.local()
+orchestrator = guard.root()
+parser = orchestrator.spawn("receipt-parser", scope=["mock:fs.read"])
+
+@parser.tool("mock:fs.read", reads="untrusted")
+def read_invoice(path): ...
+
+try:
+    parser.call("mock:payments.transfer", transfer_funds, 5000, "021000021")
+except PolicyViolation as blocked:
+    print(blocked.decision.rule)    # delegation.out_of_scope; transfer_funds never ran
+```
+
+```bash
+cd artifacts/swarm-sentinel/python
+python examples/live_injection_demo.py                          # the injection story with real Python tools
+python examples/live_injection_demo.py --remote http://127.0.0.1:8000
+python examples/bench_latency.py                                 # p50/p95/p99, in-process and HTTP
+```
+
+Session endpoints: `POST /api/swarm/sessions`, `POST /api/swarm/sessions/{id}/evaluate`, `GET /api/swarm/sessions/{id}` (a run record the dashboard and reporter understand), `DELETE /api/swarm/sessions/{id}`. Sessions are in memory and capped at 200. Interception is cooperative: an agent that skips the guard is not stopped (see the [threat model](docs/THREAT_MODEL.md), gap G1).
+
+### 5. Real data (AI Village)
 
 Needs approved access to the dataset; read [the access and handling notes](docs/ai-village-access.md) first.
 
@@ -216,7 +246,7 @@ Aggregate results from replaying all 389 village days (1,233,716 normalized even
 
 The credential-store reads are mostly agents pulling the GitLab token out of `glab`'s config to call the API directly. That is routine for the village, but it's the kind of standing access a least-privilege policy would route through a scoped tool. The default network allowlist is deliberately narrow, so most network drops are ordinary research reading (prediction-market APIs, arXiv, news sites); they show how far a strict scope sits from how these agents actually work.
 
-### 5. Check and build
+### 6. Check and build
 
 ```bash
 # Build/check shared TypeScript library references.
@@ -240,7 +270,7 @@ Dashboard output is in `artifacts/swarm-sentinel/dist/public/`; presentation out
 
 For the whole workspace, `pnpm run typecheck` checks all configured packages and `pnpm run build` checks and builds them. Frontend build processes still need `PORT` and `BASE_PATH`; Replit's managed artifact builds supply each artifact's own values.
 
-### 6. Run the presentation
+### 7. Run the presentation
 
 ```bash
 PORT=25392 BASE_PATH=/swarm-sentinel-deck/ \
@@ -286,6 +316,9 @@ artifacts/
       simulator.py               Deterministic sample generation
       models.py                  Pydantic request/event/trace models
       server.py                  FastAPI endpoints
+      live.py                    Live sessions: stateful gateway + Sentinel per session
+      sdk/guard.py               Agent-side guard (standard library only)
+      examples/                  Live injection demo, latency benchmark
       policies/                  mock.asp.json, ai-village.asp.json
       samples/                   Checked-in normal and attack traces
       village/                   AI Village adapter: normalize, ingest, scan, store
