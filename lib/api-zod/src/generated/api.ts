@@ -25,7 +25,7 @@ export const simulateSwarmBodyMaxEventsMax = 20000;
 
 
 export const SimulateSwarmBody = zod.object({
-  "scenario": zod.enum(['normal', 'attack', 'ai-village']),
+  "scenario": zod.enum(['normal', 'attack', 'injection', 'ai-village']),
   "feedbackEnabled": zod.boolean(),
   "maxDepth": zod.number().int().min(1).max(simulateSwarmBodyMaxDepthMax).optional().describe('Defaults to the scenario policy'),
   "semanticLimit": zod.number().int().min(simulateSwarmBodySemanticLimitMin).max(simulateSwarmBodySemanticLimitMax).optional().describe('Defaults to the scenario policy'),
@@ -73,7 +73,9 @@ export const SimulateSwarmResponse = zod.object({
   "detail": zod.string().optional(),
   "enforced": zod.boolean()
 })).optional(),
-  "contaminated": zod.boolean().optional()
+  "contaminated": zod.boolean().optional(),
+  "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })),
   "alerts": zod.array(zod.object({
   "id": zod.string(),

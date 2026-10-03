@@ -120,6 +120,43 @@ class Detectors(unittest.TestCase):
         self.assertIn("rapid_consensus", [a["kind"] for a in sentinel.alerts])
 
 
+class InjectionDefense(unittest.TestCase):
+    """ASP paper Simulation A: a poisoned invoice tries to move money through the swarm."""
+
+    def rules(self, feedback):
+        run = simulate(RunInput(scenario="injection", feedbackEnabled=feedback))
+        return {e["id"][-3:]: e["rule"] for e in run["events"]}, run
+
+    def test_each_layer_catches_its_step(self):
+        rules, run = self.rules(True)
+        self.assertEqual(rules["006"], "delegation.out_of_scope")      # parser was only delegated fs.read
+        self.assertEqual(rules["007"], "delegation.scope_expansion")   # child may not widen its own scope
+        self.assertEqual(rules["010"], "trust.contaminated_tool")      # ledger holds payment rights, but is tainted
+        self.assertEqual(rules["012"], "tripwire.revoked")
+        self.assertEqual(rules["014"], "policy.allow")                 # clean orchestrator keeps working
+        self.assertEqual([(a["kind"], a["agents"]) for a in run["alerts"]],
+                         [("injection_spread", ["ledger-agent", "notifier", "receipt-parser"])])
+        self.assertFalse(any(e["executed"] and e["target"] == "mock:payments.transfer" for e in run["events"]))
+
+    def test_without_feedback_taint_still_blocks_writes(self):
+        rules, run = self.rules(False)
+        self.assertEqual(rules["012"], "trust.contaminated_write")
+        self.assertEqual(run["policies"], [])
+
+    def test_taint_carries_origin(self):
+        _, run = self.rules(True)
+        origins = {e["agentId"]: e["taintOrigin"] for e in run["events"] if e["taintOrigin"]}
+        self.assertEqual(origins, {"receipt-parser": "injection-005", "ledger-agent": "injection-005", "notifier": "injection-005"})
+
+    def test_village_policy_does_not_propagate(self):
+        events = [village_event(1, "GPT-5", "village:bash", network="gitlab.com", reads="untrusted"),
+                  village_event(2, "GPT-5", "o3", "see this", seconds=1, action="message", mentions=["o3"]),
+                  village_event(3, "o3", "village:bash", write=True, resource="repo:village", seconds=2)]
+        gateway, _ = village_replay(events)
+        self.assertEqual(gateway.tainted, {})
+        self.assertFalse(gateway.telemetry[2].contaminated)
+
+
 class WeightedGraph(unittest.TestCase):
     def test_repeats_increment_weight_not_edges(self):
         events = [village_event(i, "GPT-5", "village:bash", f"step {i}", seconds=i) for i in range(5)]

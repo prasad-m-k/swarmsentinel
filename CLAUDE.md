@@ -17,7 +17,7 @@ Current release: `v2.0.0`. Research basis: `docs/source-materials/agent-security
 | `artifacts/swarm-sentinel/python/tests/` | `test_engine.py`, hand-written fixtures only |
 | `artifacts/swarm-sentinel/src/pages/dashboard.tsx` | The whole React dashboard |
 | `lib/api-spec/openapi.yaml` | API contract; `lib/api-client-react` and `lib/api-zod` are generated from it |
-| `docs/` | Research context, dataset access and handling rules, source PDFs, decks |
+| `docs/` | Research context, `THREAT_MODEL.md` (keep its status column honest when controls change), dataset access and handling rules, source PDFs, decks |
 | `download-hugginface/`, `data/ai-village/` | Raw dataset files and the normalized SQLite store. Local only, gitignored |
 
 `artifacts/api-server`, `artifacts/mockup-sandbox`, `artifacts/swarm-sentinel-deck` are starter or presentation apps, not the product.
