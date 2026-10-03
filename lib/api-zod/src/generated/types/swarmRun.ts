@@ -6,7 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PolicyChange } from './policyChange';
+import type { ReplayWindow } from './replayWindow';
+import type { RunSummary } from './runSummary';
 import type { SwarmAlert } from './swarmAlert';
+import type { SwarmRunMode } from './swarmRunMode';
+import type { SwarmRunPolicy } from './swarmRunPolicy';
+import type { SwarmRunSource } from './swarmRunSource';
 import type { Trace } from './trace';
 
 export interface SwarmRun {
@@ -19,4 +24,10 @@ export interface SwarmRun {
   report: string;
   rootAgent: string;
   startedAt: string;
+  source?: SwarmRunSource;
+  mode?: SwarmRunMode;
+  policyName?: string;
+  policy?: SwarmRunPolicy;
+  window?: ReplayWindow | null;
+  summary?: RunSummary;
 }

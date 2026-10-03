@@ -22,7 +22,8 @@ import type {
 import type {
   HealthStatus,
   RunInput,
-  SwarmRun
+  SwarmRun,
+  SwarmSources
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -61,7 +62,7 @@ export const getSimulateSwarmUrl = () => {
 }
 
 /**
- * @summary Run a deterministic synthetic swarm through ASP and Sentinel
+ * @summary Replay a synthetic scenario (enforce) or an AI Village window (report-only) through ASP and Sentinel
  */
 export const simulateSwarm = async (runInput: RunInput, options?: Parameters<typeof customFetch>[1]): Promise<SwarmRun> => {
 
@@ -127,7 +128,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SimulateSwarmMutationVariables = {data: BodyType<RunInput>}
 
     /**
- * @summary Run a deterministic synthetic swarm through ASP and Sentinel
+ * @summary Replay a synthetic scenario (enforce) or an AI Village window (report-only) through ASP and Sentinel
  */
 export const useSimulateSwarm = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof simulateSwarm>>, TError,SimulateSwarmMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -139,6 +140,83 @@ export const useSimulateSwarm = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getSimulateSwarmMutationOptions(options));
     }
+
+export const getGetSwarmSourcesUrl = () => {
+
+
+
+
+  return `/api/swarm/sources`
+}
+
+/**
+ * @summary Data sources, indexed AI Village episodes, and ASP policy declarations
+ */
+export const getSwarmSources = async ( options?: Parameters<typeof customFetch>[1]): Promise<SwarmSources> => {
+
+  return customFetch<SwarmSources>(getGetSwarmSourcesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSwarmSourcesQueryKey = () => {
+    return [
+    `/api/swarm/sources`
+    ] as const;
+    }
+
+
+export const getGetSwarmSourcesQueryOptions = <TData = Awaited<ReturnType<typeof getSwarmSources>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmSources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSwarmSourcesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSwarmSources>>> = ({ signal }) => getSwarmSources({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSwarmSources>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSwarmSourcesQueryResult = NonNullable<Awaited<ReturnType<typeof getSwarmSources>>>
+export type GetSwarmSourcesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Data sources, indexed AI Village episodes, and ASP policy declarations
+ */
+
+export function useGetSwarmSources<TData = Awaited<ReturnType<typeof getSwarmSources>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmSources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSwarmSourcesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getHealthCheckUrl = () => {
 

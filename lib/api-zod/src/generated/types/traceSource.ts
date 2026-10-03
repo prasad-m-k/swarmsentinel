@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RunInputScenario = typeof RunInputScenario[keyof typeof RunInputScenario];
+export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
 
 
-export const RunInputScenario = {
-  normal: 'normal',
-  attack: 'attack',
+export const TraceSource = {
+  synthetic: 'synthetic',
   'ai-village': 'ai-village',
 } as const;

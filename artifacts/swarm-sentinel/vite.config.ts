@@ -27,6 +27,12 @@ if (!basePath) {
   );
 }
 
+// Outside Replit, set SWARM_ENGINE_URL (e.g. http://127.0.0.1:8000) to proxy /api/swarm to the engine.
+const engineUrl = process.env.SWARM_ENGINE_URL;
+const proxy = engineUrl
+  ? { '/api/swarm': { target: engineUrl, changeOrigin: true } }
+  : undefined;
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -69,6 +75,7 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy,
     fs: {
       strict: true,
     },
@@ -77,5 +84,6 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy,
   },
 });

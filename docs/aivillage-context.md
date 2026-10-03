@@ -1,11 +1,11 @@
 # SwarmSentinel — project context
 
 **Project description:** AI Swarm Dynamics Hackathon  
-**Status:** Synthetic-sample prototype authorized by the user. Former project name: aivillage.
+**Status:** Prototype with two data paths. Synthetic scenarios demonstrate enforcement; approved AI Village records are replayed locally in report-only mode. Former project name: aivillage.
 
 ## Working interpretation
 
-The user subsequently supplied the SwarmSentinel build prompt: integrate an ASP-inspired policy gateway and multi-agent forensic dashboard. Build with a small synthetic sample set first, then establish access to AI Village. The prototype uses Python FastAPI and an interactive web dashboard, as permitted by the prompt.
+SwarmSentinel integrates an ASP-inspired policy gateway with a multi-agent forensic dashboard. It started with a small synthetic sample set. After dataset access was approved, it gained an adapter that normalizes AI Village tables into the same event model, a machine-readable ASP policy for the village, and an episode index that ranks where swarm-like coordination occurred.
 
 ## Source: Agent Security Policy paper
 
@@ -38,18 +38,18 @@ Analysis cautions:
 - Agent narration can be inaccurate. Treat it as a claim; validate against structured events and screenshots where available.
 - Generated summaries are secondary because they were created without seeing the computer-use sessions.
 - Read the dataset changelog before drawing conclusions about behavior changes over time; changes may result from scaffolding rather than agent behavior.
-- The snapshot says the dataset is access-controlled with manual review. It shows an access request awaiting review, but this is only the status in the supplied snapshot; check the current status before relying on access.
+- The dataset is access-controlled with manual review. Access was approved for this project; see [access notes](ai-village-access.md) for handling rules.
 - The stated terms allow research and analysis, prohibit training or fine-tuning AI systems without written permission, prohibit re-identification, require citation to AI Digest / AI Village, and ask researchers to share resulting publications. Do not retrieve or use the dataset outside those terms.
 - The source warns that secrets may remain despite best-effort redaction. Never use or expose credentials if encountered; report them to the dataset maintainers.
 
 Suggested citation from the supplied page: AI Digest, “AI Village dataset,” 2026, https://theaidigest.org/village.
 
-## Questions to settle before implementation
+## Decisions taken
 
-- Is aivillage meant to analyze observed agent trajectories, simulate a new swarm, evaluate agent policies, or combine these?
-- Is the AI Village dataset available for the intended use, and what subset can be accessed?
-- Should ASP-style security be a core capability or only a research lens?
-- What is the hackathon's target user, demo outcome, and time constraint?
+- **Analyze, don't simulate, for real data.** AI Village records are historical, so the gateway runs in ASP's report-only mode against them. Synthetic scenarios remain the place to demonstrate enforcement and feedback.
+- **ASP is the core capability.** Policies are JSON declarations following the paper's schema (network, tools, content-trust, delegation, reporting), plus a `swarm` extension for rate limits and tripwire thresholds.
+- **Scope of real data.** Chat, computer-use shell and tool actions, and the Claude Code agent's tool calls. GUI micro-actions, memories, summaries and screenshots are out of scope for now.
+- **No sub-agent lineage in the data.** AI Village agents are peers admitted by the village; the export has no Task sub-agent spawns. Depth and fan-out rules are exercised only by the synthetic scenarios.
 
 ## Supplied source files
 

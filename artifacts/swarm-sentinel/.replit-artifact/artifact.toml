@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "SwarmSentinel"
-description = "AI Swarm Dynamics Hackathon — a Python FastAPI prototype combining ASP policy enforcement with a multi-agent flight recorder and interactive forensic dashboard using synthetic samples."
+description = "AI Swarm Dynamics Hackathon: a Python FastAPI prototype combining ASP policy enforcement with a multi-agent flight recorder and forensic dashboard, using synthetic scenarios and locally stored AI Village replays."
 version = "1.0.0"
 id = "artifacts/swarm-sentinel"
 router = "path"

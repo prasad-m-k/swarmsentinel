@@ -11,18 +11,31 @@ export interface RunInput {
   scenario: RunInputScenario;
   feedbackEnabled: boolean;
   /**
+     * Defaults to the scenario policy
      * @minimum 1
      * @maximum 10
      */
   maxDepth?: number;
   /**
+     * Defaults to the scenario policy
      * @minimum 2
      * @maximum 20
      */
   semanticLimit?: number;
   /**
+     * Defaults to the scenario policy
      * @minimum 1
-     * @maximum 30
+     * @maximum 60
      */
   writeLimit?: number;
+  /** Indexed AI Village episode to replay */
+  episodeId?: string;
+  /** UTC start of an AI Village window (with end; max 24 hours) */
+  start?: string;
+  end?: string;
+  /**
+     * @minimum 10
+     * @maximum 20000
+     */
+  maxEvents?: number;
 }

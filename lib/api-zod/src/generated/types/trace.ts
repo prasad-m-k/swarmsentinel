@@ -8,6 +8,10 @@
 import type { TraceAction } from './traceAction';
 import type { TraceChannel } from './traceChannel';
 import type { TraceDecision } from './traceDecision';
+import type { TraceMode } from './traceMode';
+import type { TraceReads } from './traceReads';
+import type { TraceSource } from './traceSource';
+import type { Violation } from './violation';
 
 export interface Trace {
   id: string;
@@ -27,4 +31,17 @@ export interface Trace {
   reason: string;
   executed: boolean;
   policyVersion: number;
+  source?: TraceSource;
+  /** table:row-id in the source dataset */
+  sourceRef?: string;
+  detail?: string;
+  network?: string;
+  reads?: TraceReads;
+  /** @nullable */
+  write?: boolean | null;
+  resource?: string;
+  mentions?: string[];
+  mode?: TraceMode;
+  violations?: Violation[];
+  contaminated?: boolean;
 }

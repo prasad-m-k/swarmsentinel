@@ -9,26 +9,31 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Run a deterministic synthetic swarm through ASP and Sentinel
+ * @summary Replay a synthetic scenario (enforce) or an AI Village window (report-only) through ASP and Sentinel
  */
-export const simulateSwarmBodyMaxDepthDefault = 4;
 export const simulateSwarmBodyMaxDepthMax = 10;
 
-export const simulateSwarmBodySemanticLimitDefault = 5;
 export const simulateSwarmBodySemanticLimitMin = 2;
 export const simulateSwarmBodySemanticLimitMax = 20;
 
-export const simulateSwarmBodyWriteLimitDefault = 6;
-export const simulateSwarmBodyWriteLimitMax = 30;
+export const simulateSwarmBodyWriteLimitMax = 60;
+
+export const simulateSwarmBodyMaxEventsDefault = 5000;
+export const simulateSwarmBodyMaxEventsMin = 10;
+export const simulateSwarmBodyMaxEventsMax = 20000;
 
 
 
 export const SimulateSwarmBody = zod.object({
-  "scenario": zod.enum(['normal', 'attack']),
+  "scenario": zod.enum(['normal', 'attack', 'ai-village']),
   "feedbackEnabled": zod.boolean(),
-  "maxDepth": zod.number().int().min(1).max(simulateSwarmBodyMaxDepthMax).default(simulateSwarmBodyMaxDepthDefault),
-  "semanticLimit": zod.number().int().min(simulateSwarmBodySemanticLimitMin).max(simulateSwarmBodySemanticLimitMax).default(simulateSwarmBodySemanticLimitDefault),
-  "writeLimit": zod.number().int().min(1).max(simulateSwarmBodyWriteLimitMax).default(simulateSwarmBodyWriteLimitDefault)
+  "maxDepth": zod.number().int().min(1).max(simulateSwarmBodyMaxDepthMax).optional().describe('Defaults to the scenario policy'),
+  "semanticLimit": zod.number().int().min(simulateSwarmBodySemanticLimitMin).max(simulateSwarmBodySemanticLimitMax).optional().describe('Defaults to the scenario policy'),
+  "writeLimit": zod.number().int().min(1).max(simulateSwarmBodyWriteLimitMax).optional().describe('Defaults to the scenario policy'),
+  "episodeId": zod.string().optional().describe('Indexed AI Village episode to replay'),
+  "start": zod.string().optional().describe('UTC start of an AI Village window (with end; max 24 hours)'),
+  "end": zod.string().optional(),
+  "maxEvents": zod.number().int().min(simulateSwarmBodyMaxEventsMin).max(simulateSwarmBodyMaxEventsMax).default(simulateSwarmBodyMaxEventsDefault)
 })
 
 export const SimulateSwarmResponse = zod.object({
@@ -52,7 +57,23 @@ export const SimulateSwarmResponse = zod.object({
   "rule": zod.string(),
   "reason": zod.string(),
   "executed": zod.boolean(),
-  "policyVersion": zod.number().int()
+  "policyVersion": zod.number().int(),
+  "source": zod.enum(['synthetic', 'ai-village']).optional(),
+  "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
+  "detail": zod.string().optional(),
+  "network": zod.string().optional(),
+  "reads": zod.enum(['', 'high', 'medium', 'low', 'untrusted']).optional(),
+  "write": zod.boolean().nullish(),
+  "resource": zod.string().optional(),
+  "mentions": zod.array(zod.string()).optional(),
+  "mode": zod.enum(['enforce', 'report-only']).optional(),
+  "violations": zod.array(zod.object({
+  "directive": zod.string(),
+  "attempted_action": zod.string(),
+  "detail": zod.string().optional(),
+  "enforced": zod.boolean()
+})).optional(),
+  "contaminated": zod.boolean().optional()
 })),
   "alerts": zod.array(zod.object({
   "id": zod.string(),
@@ -70,7 +91,64 @@ export const SimulateSwarmResponse = zod.object({
 })),
   "report": zod.string(),
   "rootAgent": zod.string(),
-  "startedAt": zod.string()
+  "startedAt": zod.string(),
+  "source": zod.enum(['synthetic', 'ai-village']).optional(),
+  "mode": zod.enum(['enforce', 'report-only']).optional(),
+  "policyName": zod.string().optional(),
+  "policy": zod.record(zod.string(), zod.unknown()).optional(),
+  "window": zod.union([zod.object({
+  "dataset": zod.string(),
+  "exportedAt": zod.string(),
+  "citation": zod.string(),
+  "start": zod.string(),
+  "end": zod.string(),
+  "truncated": zod.boolean(),
+  "episodeId": zod.string().nullish(),
+  "day": zod.string(),
+  "regime": zod.string()
+}),zod.null()]).optional(),
+  "summary": zod.object({
+  "decisions": zod.record(zod.string(), zod.number().int()),
+  "blockedByRule": zod.record(zod.string(), zod.number().int()),
+  "advisories": zod.record(zod.string(), zod.number().int()),
+  "alertsByKind": zod.record(zod.string(), zod.number().int()),
+  "agents": zod.number().int(),
+  "writes": zod.number().int(),
+  "contaminatedWrites": zod.number().int(),
+  "networkHosts": zod.record(zod.string(), zod.number().int()),
+  "sharedResources": zod.record(zod.string(), zod.number().int())
+}).optional()
+})
+
+
+/**
+ * @summary Data sources, indexed AI Village episodes, and ASP policy declarations
+ */
+export const GetSwarmSourcesResponse = zod.object({
+  "aiVillage": zod.object({
+  "available": zod.boolean(),
+  "dataset": zod.string().optional(),
+  "exportedAt": zod.string().optional(),
+  "citation": zod.string().optional(),
+  "range": zod.array(zod.string()).optional(),
+  "events": zod.record(zod.string(), zod.number().int()).optional(),
+  "episodes": zod.array(zod.object({
+  "id": zod.string(),
+  "day": zod.string(),
+  "start": zod.string(),
+  "end": zod.string(),
+  "events": zod.number().int(),
+  "alerts": zod.number().int(),
+  "alertsByKind": zod.record(zod.string(), zod.number().int()),
+  "agents": zod.array(zod.string()),
+  "wouldBlock": zod.number().int(),
+  "blockedByRule": zod.record(zod.string(), zod.number().int()).optional(),
+  "resources": zod.array(zod.string()).optional(),
+  "score": zod.number(),
+  "headline": zod.string()
+}))
+}),
+  "policies": zod.record(zod.string(), zod.record(zod.string(), zod.unknown()))
 })
 
 
