@@ -6,13 +6,35 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './episode';
+export * from './episodeAlertsByKind';
+export * from './episodeBlockedByRule';
 export * from './healthStatus';
 export * from './policyChange';
+export * from './replayWindow';
 export * from './runInput';
 export * from './runInputScenario';
+export * from './runSummary';
+export * from './runSummaryAdvisories';
+export * from './runSummaryAlertsByKind';
+export * from './runSummaryBlockedByRule';
+export * from './runSummaryDecisions';
+export * from './runSummaryNetworkHosts';
+export * from './runSummarySharedResources';
 export * from './swarmAlert';
 export * from './swarmRun';
+export * from './swarmRunMode';
+export * from './swarmRunPolicy';
+export * from './swarmRunSource';
+export * from './swarmSources';
+export * from './swarmSourcesPolicies';
 export * from './trace';
 export * from './traceAction';
 export * from './traceChannel';
 export * from './traceDecision';
+export * from './traceMode';
+export * from './traceReads';
+export * from './traceSource';
+export * from './villageSource';
+export * from './villageSourceEvents';
+export * from './violation';

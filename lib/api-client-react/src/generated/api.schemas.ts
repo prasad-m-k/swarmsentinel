@@ -11,26 +11,40 @@ export type RunInputScenario = typeof RunInputScenario[keyof typeof RunInputScen
 export const RunInputScenario = {
   normal: 'normal',
   attack: 'attack',
+  'ai-village': 'ai-village',
 } as const;
 
 export interface RunInput {
   scenario: RunInputScenario;
   feedbackEnabled: boolean;
   /**
+     * Defaults to the scenario policy
      * @minimum 1
      * @maximum 10
      */
   maxDepth?: number;
   /**
+     * Defaults to the scenario policy
      * @minimum 2
      * @maximum 20
      */
   semanticLimit?: number;
   /**
+     * Defaults to the scenario policy
      * @minimum 1
-     * @maximum 30
+     * @maximum 60
      */
   writeLimit?: number;
+  /** Indexed AI Village episode to replay */
+  episodeId?: string;
+  /** UTC start of an AI Village window (with end; max 24 hours) */
+  start?: string;
+  end?: string;
+  /**
+     * @minimum 10
+     * @maximum 20000
+     */
+  maxEvents?: number;
 }
 
 export type TraceAction = typeof TraceAction[keyof typeof TraceAction];
@@ -61,6 +75,40 @@ export const TraceDecision = {
   observed: 'observed',
 } as const;
 
+export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
+
+
+export const TraceSource = {
+  synthetic: 'synthetic',
+  'ai-village': 'ai-village',
+} as const;
+
+export type TraceReads = typeof TraceReads[keyof typeof TraceReads];
+
+
+export const TraceReads = {
+  '': '',
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  untrusted: 'untrusted',
+} as const;
+
+export type TraceMode = typeof TraceMode[keyof typeof TraceMode];
+
+
+export const TraceMode = {
+  enforce: 'enforce',
+  'report-only': 'report-only',
+} as const;
+
+export interface Violation {
+  directive: string;
+  attempted_action: string;
+  detail?: string;
+  enforced: boolean;
+}
+
 export interface Trace {
   id: string;
   timestamp: string;
@@ -79,6 +127,19 @@ export interface Trace {
   reason: string;
   executed: boolean;
   policyVersion: number;
+  source?: TraceSource;
+  /** table:row-id in the source dataset */
+  sourceRef?: string;
+  detail?: string;
+  network?: string;
+  reads?: TraceReads;
+  /** @nullable */
+  write?: boolean | null;
+  resource?: string;
+  mentions?: string[];
+  mode?: TraceMode;
+  violations?: Violation[];
+  contaminated?: boolean;
 }
 
 export interface SwarmAlert {
@@ -97,6 +158,61 @@ export interface PolicyChange {
   reason: string;
 }
 
+export type SwarmRunSource = typeof SwarmRunSource[keyof typeof SwarmRunSource];
+
+
+export const SwarmRunSource = {
+  synthetic: 'synthetic',
+  'ai-village': 'ai-village',
+} as const;
+
+export type SwarmRunMode = typeof SwarmRunMode[keyof typeof SwarmRunMode];
+
+
+export const SwarmRunMode = {
+  enforce: 'enforce',
+  'report-only': 'report-only',
+} as const;
+
+export type SwarmRunPolicy = { [key: string]: unknown };
+
+export interface ReplayWindow {
+  dataset: string;
+  exportedAt: string;
+  citation: string;
+  start: string;
+  end: string;
+  truncated: boolean;
+  /** @nullable */
+  episodeId?: string | null;
+  day: string;
+  regime: string;
+}
+
+export type RunSummaryDecisions = {[key: string]: number};
+
+export type RunSummaryBlockedByRule = {[key: string]: number};
+
+export type RunSummaryAdvisories = {[key: string]: number};
+
+export type RunSummaryAlertsByKind = {[key: string]: number};
+
+export type RunSummaryNetworkHosts = {[key: string]: number};
+
+export type RunSummarySharedResources = {[key: string]: number};
+
+export interface RunSummary {
+  decisions: RunSummaryDecisions;
+  blockedByRule: RunSummaryBlockedByRule;
+  advisories: RunSummaryAdvisories;
+  alertsByKind: RunSummaryAlertsByKind;
+  agents: number;
+  writes: number;
+  contaminatedWrites: number;
+  networkHosts: RunSummaryNetworkHosts;
+  sharedResources: RunSummarySharedResources;
+}
+
 export interface SwarmRun {
   id: string;
   scenario: string;
@@ -107,6 +223,51 @@ export interface SwarmRun {
   report: string;
   rootAgent: string;
   startedAt: string;
+  source?: SwarmRunSource;
+  mode?: SwarmRunMode;
+  policyName?: string;
+  policy?: SwarmRunPolicy;
+  window?: ReplayWindow | null;
+  summary?: RunSummary;
+}
+
+export type EpisodeAlertsByKind = {[key: string]: number};
+
+export type EpisodeBlockedByRule = {[key: string]: number};
+
+export interface Episode {
+  id: string;
+  day: string;
+  start: string;
+  end: string;
+  events: number;
+  alerts: number;
+  alertsByKind: EpisodeAlertsByKind;
+  agents: string[];
+  wouldBlock: number;
+  blockedByRule?: EpisodeBlockedByRule;
+  resources?: string[];
+  score: number;
+  headline: string;
+}
+
+export type VillageSourceEvents = {[key: string]: number};
+
+export interface VillageSource {
+  available: boolean;
+  dataset?: string;
+  exportedAt?: string;
+  citation?: string;
+  range?: string[];
+  events?: VillageSourceEvents;
+  episodes: Episode[];
+}
+
+export type SwarmSourcesPolicies = {[key: string]: { [key: string]: unknown }};
+
+export interface SwarmSources {
+  aiVillage: VillageSource;
+  policies: SwarmSourcesPolicies;
 }
 
 export interface HealthStatus {

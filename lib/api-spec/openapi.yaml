@@ -15,7 +15,7 @@ paths:
     post:
       operationId: simulateSwarm
       tags: [swarm]
-      summary: Run a deterministic synthetic swarm through ASP and Sentinel
+      summary: Replay a synthetic scenario (enforce) or an AI Village window (report-only) through ASP and Sentinel
       requestBody:
         required: true
         content:
@@ -29,6 +29,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SwarmRun"
+  /swarm/sources:
+    get:
+      operationId: getSwarmSources
+      tags: [swarm]
+      summary: Data sources, indexed AI Village episodes, and ASP policy declarations
+      responses:
+        "200":
+          description: Available sources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwarmSources"
   /healthz:
     get:
       operationId: healthCheck
@@ -48,11 +60,15 @@ components:
       type: object
       required: [scenario, feedbackEnabled]
       properties:
-        scenario: { type: string, enum: [normal, attack] }
+        scenario: { type: string, enum: [normal, attack, ai-village] }
         feedbackEnabled: { type: boolean }
-        maxDepth: { type: integer, minimum: 1, maximum: 10, default: 4 }
-        semanticLimit: { type: integer, minimum: 2, maximum: 20, default: 5 }
-        writeLimit: { type: integer, minimum: 1, maximum: 30, default: 6 }
+        maxDepth: { type: integer, minimum: 1, maximum: 10, description: Defaults to the scenario policy }
+        semanticLimit: { type: integer, minimum: 2, maximum: 20, description: Defaults to the scenario policy }
+        writeLimit: { type: integer, minimum: 1, maximum: 60, description: Defaults to the scenario policy }
+        episodeId: { type: string, description: Indexed AI Village episode to replay }
+        start: { type: string, description: UTC start of an AI Village window (with end; max 24 hours) }
+        end: { type: string }
+        maxEvents: { type: integer, minimum: 10, maximum: 20000, default: 5000 }
     Trace:
       type: object
       required: [id, timestamp, agentId, parentId, spanId, parentSpanId, action, channel, target, intent, intentVector, depth, decision, rule, reason, executed, policyVersion]
@@ -74,6 +90,25 @@ components:
         reason: { type: string }
         executed: { type: boolean }
         policyVersion: { type: integer }
+        source: { type: string, enum: [synthetic, ai-village] }
+        sourceRef: { type: string, description: "table:row-id in the source dataset" }
+        detail: { type: string }
+        network: { type: string }
+        reads: { type: string, enum: ["", high, medium, low, untrusted] }
+        write: { type: [boolean, "null"] }
+        resource: { type: string }
+        mentions: { type: array, items: { type: string } }
+        mode: { type: string, enum: [enforce, report-only] }
+        violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
+        contaminated: { type: boolean }
+    Violation:
+      type: object
+      required: [directive, attempted_action, enforced]
+      properties:
+        directive: { type: string }
+        attempted_action: { type: string }
+        detail: { type: string }
+        enforced: { type: boolean }
     SwarmAlert:
       type: object
       required: [id, timestamp, kind, reason, agents, eventId]
@@ -105,6 +140,72 @@ components:
         report: { type: string }
         rootAgent: { type: string }
         startedAt: { type: string }
+        source: { type: string, enum: [synthetic, ai-village] }
+        mode: { type: string, enum: [enforce, report-only] }
+        policyName: { type: string }
+        policy: { type: object, additionalProperties: true }
+        window: { oneOf: [{ $ref: "#/components/schemas/ReplayWindow" }, { type: "null" }] }
+        summary: { $ref: "#/components/schemas/RunSummary" }
+    ReplayWindow:
+      type: object
+      required: [dataset, exportedAt, citation, start, end, truncated, day, regime]
+      properties:
+        dataset: { type: string }
+        exportedAt: { type: string }
+        citation: { type: string }
+        start: { type: string }
+        end: { type: string }
+        truncated: { type: boolean }
+        episodeId: { type: [string, "null"] }
+        day: { type: string }
+        regime: { type: string }
+    RunSummary:
+      type: object
+      required: [decisions, blockedByRule, advisories, alertsByKind, agents, writes, contaminatedWrites, networkHosts, sharedResources]
+      properties:
+        decisions: { type: object, additionalProperties: { type: integer } }
+        blockedByRule: { type: object, additionalProperties: { type: integer } }
+        advisories: { type: object, additionalProperties: { type: integer } }
+        alertsByKind: { type: object, additionalProperties: { type: integer } }
+        agents: { type: integer }
+        writes: { type: integer }
+        contaminatedWrites: { type: integer }
+        networkHosts: { type: object, additionalProperties: { type: integer } }
+        sharedResources: { type: object, additionalProperties: { type: integer } }
+    Episode:
+      type: object
+      required: [id, day, start, end, events, alerts, alertsByKind, agents, wouldBlock, score, headline]
+      properties:
+        id: { type: string }
+        day: { type: string }
+        start: { type: string }
+        end: { type: string }
+        events: { type: integer }
+        alerts: { type: integer }
+        alertsByKind: { type: object, additionalProperties: { type: integer } }
+        agents: { type: array, items: { type: string } }
+        wouldBlock: { type: integer }
+        blockedByRule: { type: object, additionalProperties: { type: integer } }
+        resources: { type: array, items: { type: string } }
+        score: { type: number }
+        headline: { type: string }
+    VillageSource:
+      type: object
+      required: [available, episodes]
+      properties:
+        available: { type: boolean }
+        dataset: { type: string }
+        exportedAt: { type: string }
+        citation: { type: string }
+        range: { type: array, items: { type: string } }
+        events: { type: object, additionalProperties: { type: integer } }
+        episodes: { type: array, items: { $ref: "#/components/schemas/Episode" } }
+    SwarmSources:
+      type: object
+      required: [aiVillage, policies]
+      properties:
+        aiVillage: { $ref: "#/components/schemas/VillageSource" }
+        policies: { type: object, additionalProperties: { type: object, additionalProperties: true } }
     HealthStatus:
       type: object
       properties:

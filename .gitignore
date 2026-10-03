@@ -53,3 +53,7 @@ __pycache__/
 *.py[cod]
 .pythonlibs/
 .venv/
+
+# AI Village dataset (gated research data; never commit raw or derived records)
+/download-hugginface/
+/data/ai-village/

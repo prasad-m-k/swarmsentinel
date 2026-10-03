@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type RunInputScenario = typeof RunInputScenario[keyof typeof RunInputScenario];
+export type SwarmRunSource = typeof SwarmRunSource[keyof typeof SwarmRunSource];
 
 
-export const RunInputScenario = {
-  normal: 'normal',
-  attack: 'attack',
+export const SwarmRunSource = {
+  synthetic: 'synthetic',
   'ai-village': 'ai-village',
 } as const;
