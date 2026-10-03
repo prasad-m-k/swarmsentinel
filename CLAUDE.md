@@ -17,7 +17,7 @@ Current release: `v2.0.0`. Research basis: `docs/source-materials/agent-security
 | `artifacts/swarm-sentinel/python/tests/` | `test_engine.py`, hand-written fixtures only |
 | `artifacts/swarm-sentinel/src/pages/dashboard.tsx` | The whole React dashboard |
 | `lib/api-spec/openapi.yaml` | API contract; `lib/api-client-react` and `lib/api-zod` are generated from it |
-| `docs/` | Research context, dataset access and handling rules, source PDFs, decks |
+| `docs/` | Research context, `THREAT_MODEL.md` (keep its status column honest when controls change), dataset access and handling rules, source PDFs, decks |
 | `download-hugginface/`, `data/ai-village/` | Raw dataset files and the normalized SQLite store. Local only, gitignored |
 
 `artifacts/api-server`, `artifacts/mockup-sandbox`, `artifacts/swarm-sentinel-deck` are starter or presentation apps, not the product.
@@ -35,6 +35,10 @@ Python (repo root): `uv sync --frozen` creates `.venv`. pnpm is not installed gl
 
 # Dashboard dev server proxying to the engine
 SWARM_ENGINE_URL=http://127.0.0.1:8000 PORT=5173 BASE_PATH=/ npx -y pnpm@10 --filter @workspace/swarm-sentinel run dev
+
+# Live guard: demo and latency benchmark (from artifacts/swarm-sentinel/python)
+../../../.venv/bin/python examples/live_injection_demo.py [--remote http://127.0.0.1:8000]
+../../../.venv/bin/python examples/bench_latency.py
 
 # After any OpenAPI change
 npx -y pnpm@10 --filter @workspace/api-spec run codegen
@@ -88,4 +92,5 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 ## Known issues
 
 - Radar weight labels crowd around hub nodes such as `village:bash` in busy AI Village episodes; hover a node to isolate its edges.
+- Live mode in `vite dev`: a hot reload that swaps `dashboard.tsx` can orphan an open EventSource for up to a minute, so new streams queue behind it (HTTP/1.1 connection limit). Reload the page; production builds are unaffected.
 - Office apps are sandboxed: to export a .pptx to PDF via AppleScript, work inside `~/Library/Containers/com.microsoft.Powerpoint/Data/`, not `/tmp`.

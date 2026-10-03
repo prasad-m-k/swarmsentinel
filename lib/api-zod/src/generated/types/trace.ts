@@ -44,4 +44,8 @@ export interface Trace {
   mode?: TraceMode;
   violations?: Violation[];
   contaminated?: boolean;
+  /** Event id of the untrusted read this context descends from; empty if clean */
+  taintOrigin?: string;
+  /** Spawn only: tool patterns delegated to the child */
+  scope?: string[];
 }

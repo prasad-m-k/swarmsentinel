@@ -41,6 +41,111 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SwarmSources"
+  /swarm/sessions:
+    get:
+      operationId: listSwarmSessions
+      tags: [swarm]
+      summary: Live sessions, newest first
+      responses:
+        "200":
+          description: Session summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SessionSummary" }
+    post:
+      operationId: createSwarmSession
+      tags: [swarm]
+      summary: Start a live session (stateful gateway and Sentinel, enforce mode)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionInput" }
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionCreated" }
+  /swarm/sessions/{sessionId}/stream:
+    get:
+      operationId: streamSwarmSession
+      tags: [swarm]
+      summary: "Server-sent events: traces after `after`, with current alerts and revocations"
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, required: false, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: "text/event-stream; each data line is a SessionStreamMessage"
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "404": { description: Unknown or expired session }
+  /swarm/demo/injection:
+    post:
+      operationId: launchInjectionDemo
+      tags: [swarm]
+      summary: Start the poisoned-invoice attack against a fresh live session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DemoInput" }
+      responses:
+        "202":
+          description: Demo started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId]
+                properties:
+                  sessionId: { type: string }
+  /swarm/sessions/{sessionId}/evaluate:
+    post:
+      operationId: evaluateSwarmCall
+      tags: [swarm]
+      summary: Decide one proposed agent action before it executes
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CallInput" }
+      responses:
+        "200":
+          description: Decision; allowed=false means the agent must not execute the call
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallDecision" }
+        "404": { description: Unknown or expired session }
+  /swarm/sessions/{sessionId}:
+    get:
+      operationId: getSwarmSession
+      tags: [swarm]
+      summary: Snapshot of a live session as a run record
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Live run record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwarmRun" }
+        "404": { description: Unknown or expired session }
+    delete:
+      operationId: deleteSwarmSession
+      tags: [swarm]
+      summary: End a live session
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Unknown or expired session }
   /healthz:
     get:
       operationId: healthCheck
@@ -60,7 +165,7 @@ components:
       type: object
       required: [scenario, feedbackEnabled]
       properties:
-        scenario: { type: string, enum: [normal, attack, ai-village] }
+        scenario: { type: string, enum: [normal, attack, injection, runaway, ai-village] }
         feedbackEnabled: { type: boolean }
         maxDepth: { type: integer, minimum: 1, maximum: 10, description: Defaults to the scenario policy }
         semanticLimit: { type: integer, minimum: 2, maximum: 20, description: Defaults to the scenario policy }
@@ -90,7 +195,7 @@ components:
         reason: { type: string }
         executed: { type: boolean }
         policyVersion: { type: integer }
-        source: { type: string, enum: [synthetic, ai-village] }
+        source: { type: string, enum: [synthetic, ai-village, live] }
         sourceRef: { type: string, description: "table:row-id in the source dataset" }
         detail: { type: string }
         network: { type: string }
@@ -101,6 +206,8 @@ components:
         mode: { type: string, enum: [enforce, report-only] }
         violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
         contaminated: { type: boolean }
+        taintOrigin: { type: string, description: Event id of the untrusted read this context descends from; empty if clean }
+        scope: { type: array, items: { type: string }, description: "Spawn only: tool patterns delegated to the child" }
     Violation:
       type: object
       required: [directive, attempted_action, enforced]
@@ -140,7 +247,7 @@ components:
         report: { type: string }
         rootAgent: { type: string }
         startedAt: { type: string }
-        source: { type: string, enum: [synthetic, ai-village] }
+        source: { type: string, enum: [synthetic, ai-village, live] }
         mode: { type: string, enum: [enforce, report-only] }
         policyName: { type: string }
         policy: { type: object, additionalProperties: true }
@@ -220,6 +327,78 @@ components:
       properties:
         aiVillage: { $ref: "#/components/schemas/VillageSource" }
         policies: { type: object, additionalProperties: { type: object, additionalProperties: true } }
+    SessionInput:
+      type: object
+      properties:
+        policy: { type: string, enum: [mock, ai-village], default: mock }
+        feedbackEnabled: { type: boolean, default: true }
+        root: { type: string, default: orchestrator }
+    SessionSummary:
+      type: object
+      required: [sessionId, created, policyName, root, label, events, alerts]
+      properties:
+        sessionId: { type: string }
+        created: { type: string }
+        policyName: { type: string }
+        root: { type: string }
+        label: { type: string }
+        events: { type: integer }
+        alerts: { type: integer }
+    SessionStreamMessage:
+      type: object
+      required: [events, alerts, policies, total]
+      properties:
+        events: { type: array, items: { $ref: "#/components/schemas/Trace" } }
+        alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
+        policies: { type: array, items: { $ref: "#/components/schemas/PolicyChange" } }
+        total: { type: integer }
+    DemoInput:
+      type: object
+      properties:
+        feedbackEnabled: { type: boolean, default: true }
+        pause: { type: number, minimum: 0, maximum: 5, default: 1.2 }
+    SessionCreated:
+      type: object
+      required: [sessionId, policyName, root, feedbackEnabled, policy]
+      properties:
+        sessionId: { type: string }
+        policyName: { type: string }
+        root: { type: string }
+        feedbackEnabled: { type: boolean }
+        policy: { type: object, additionalProperties: true }
+    CallInput:
+      type: object
+      required: [agentId, action, target, spanId]
+      properties:
+        agentId: { type: string }
+        action: { type: string, enum: [spawn, tool, message] }
+        target: { type: string }
+        intent: { type: string }
+        parentId: { type: string }
+        spanId: { type: string }
+        parentSpanId: { type: string }
+        detail: { type: string }
+        network: { type: string }
+        reads: { type: string, enum: ["", high, medium, low, untrusted] }
+        write: { type: [boolean, "null"] }
+        resource: { type: string }
+        mentions: { type: array, items: { type: string } }
+        scope: { type: array, items: { type: string } }
+        timestamp: { type: [string, "null"] }
+    CallDecision:
+      type: object
+      required: [eventId, allowed, decision, rule, reason, policyVersion, taintOrigin, violations, alerts, evaluationMs]
+      properties:
+        eventId: { type: string }
+        allowed: { type: boolean }
+        decision: { type: string, enum: [allow, throttle, drop, observed] }
+        rule: { type: string }
+        reason: { type: string }
+        policyVersion: { type: integer }
+        taintOrigin: { type: string }
+        violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
+        alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
+        evaluationMs: { type: number }
     HealthStatus:
       type: object
       properties:

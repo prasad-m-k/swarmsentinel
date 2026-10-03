@@ -25,7 +25,7 @@ export const simulateSwarmBodyMaxEventsMax = 20000;
 
 
 export const SimulateSwarmBody = zod.object({
-  "scenario": zod.enum(['normal', 'attack', 'ai-village']),
+  "scenario": zod.enum(['normal', 'attack', 'injection', 'runaway', 'ai-village']),
   "feedbackEnabled": zod.boolean(),
   "maxDepth": zod.number().int().min(1).max(simulateSwarmBodyMaxDepthMax).optional().describe('Defaults to the scenario policy'),
   "semanticLimit": zod.number().int().min(simulateSwarmBodySemanticLimitMin).max(simulateSwarmBodySemanticLimitMax).optional().describe('Defaults to the scenario policy'),
@@ -58,7 +58,7 @@ export const SimulateSwarmResponse = zod.object({
   "reason": zod.string(),
   "executed": zod.boolean(),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -73,7 +73,9 @@ export const SimulateSwarmResponse = zod.object({
   "detail": zod.string().optional(),
   "enforced": zod.boolean()
 })).optional(),
-  "contaminated": zod.boolean().optional()
+  "contaminated": zod.boolean().optional(),
+  "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })),
   "alerts": zod.array(zod.object({
   "id": zod.string(),
@@ -92,7 +94,7 @@ export const SimulateSwarmResponse = zod.object({
   "report": zod.string(),
   "rootAgent": zod.string(),
   "startedAt": zod.string(),
-  "source": zod.enum(['synthetic', 'ai-village']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
   "mode": zod.enum(['enforce', 'report-only']).optional(),
   "policyName": zod.string().optional(),
   "policy": zod.record(zod.string(), zod.unknown()).optional(),
@@ -158,6 +160,244 @@ export const GetSwarmSourcesResponse = zod.object({
 }),
   "policies": zod.record(zod.string(), zod.record(zod.string(), zod.unknown()))
 })
+
+
+/**
+ * @summary Live sessions, newest first
+ */
+export const ListSwarmSessionsResponseItem = zod.object({
+  "sessionId": zod.string(),
+  "created": zod.string(),
+  "policyName": zod.string(),
+  "root": zod.string(),
+  "label": zod.string(),
+  "events": zod.number().int(),
+  "alerts": zod.number().int()
+})
+export const ListSwarmSessionsResponse = zod.array(ListSwarmSessionsResponseItem)
+
+
+/**
+ * @summary Start a live session (stateful gateway and Sentinel, enforce mode)
+ */
+export const createSwarmSessionBodyPolicyDefault = `mock`;
+export const createSwarmSessionBodyFeedbackEnabledDefault = true;
+export const createSwarmSessionBodyRootDefault = `orchestrator`;
+
+export const CreateSwarmSessionBody = zod.object({
+  "policy": zod.enum(['mock', 'ai-village']).default(createSwarmSessionBodyPolicyDefault),
+  "feedbackEnabled": zod.boolean().default(createSwarmSessionBodyFeedbackEnabledDefault),
+  "root": zod.string().default(createSwarmSessionBodyRootDefault)
+})
+
+export const CreateSwarmSessionResponse = zod.object({
+  "sessionId": zod.string(),
+  "policyName": zod.string(),
+  "root": zod.string(),
+  "feedbackEnabled": zod.boolean(),
+  "policy": zod.record(zod.string(), zod.unknown())
+})
+
+
+/**
+ * @summary Server-sent events: traces after `after`, with current alerts and revocations
+ */
+export const StreamSwarmSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const streamSwarmSessionQueryAfterMin = 0;
+
+
+
+export const StreamSwarmSessionQueryParams = zod.object({
+  "after": zod.coerce.number().int().min(streamSwarmSessionQueryAfterMin).optional()
+})
+
+export const StreamSwarmSessionResponse = zod.unknown()
+
+
+/**
+ * @summary Start the poisoned-invoice attack against a fresh live session
+ */
+export const launchInjectionDemoBodyFeedbackEnabledDefault = true;
+export const launchInjectionDemoBodyPauseDefault = 1.2;
+export const launchInjectionDemoBodyPauseMin = 0;
+export const launchInjectionDemoBodyPauseMax = 5;
+
+
+
+export const LaunchInjectionDemoBody = zod.object({
+  "feedbackEnabled": zod.boolean().default(launchInjectionDemoBodyFeedbackEnabledDefault),
+  "pause": zod.number().min(launchInjectionDemoBodyPauseMin).max(launchInjectionDemoBodyPauseMax).default(launchInjectionDemoBodyPauseDefault)
+})
+
+export const LaunchInjectionDemoResponse = zod.object({
+  "sessionId": zod.string()
+})
+
+
+/**
+ * @summary Decide one proposed agent action before it executes
+ */
+export const EvaluateSwarmCallParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const EvaluateSwarmCallBody = zod.object({
+  "agentId": zod.string(),
+  "action": zod.enum(['spawn', 'tool', 'message']),
+  "target": zod.string(),
+  "intent": zod.string().optional(),
+  "parentId": zod.string().optional(),
+  "spanId": zod.string(),
+  "parentSpanId": zod.string().optional(),
+  "detail": zod.string().optional(),
+  "network": zod.string().optional(),
+  "reads": zod.enum(['', 'high', 'medium', 'low', 'untrusted']).optional(),
+  "write": zod.boolean().nullish(),
+  "resource": zod.string().optional(),
+  "mentions": zod.array(zod.string()).optional(),
+  "scope": zod.array(zod.string()).optional(),
+  "timestamp": zod.string().nullish()
+})
+
+export const EvaluateSwarmCallResponse = zod.object({
+  "eventId": zod.string(),
+  "allowed": zod.boolean(),
+  "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
+  "rule": zod.string(),
+  "reason": zod.string(),
+  "policyVersion": zod.number().int(),
+  "taintOrigin": zod.string(),
+  "violations": zod.array(zod.object({
+  "directive": zod.string(),
+  "attempted_action": zod.string(),
+  "detail": zod.string().optional(),
+  "enforced": zod.boolean()
+})),
+  "alerts": zod.array(zod.object({
+  "id": zod.string(),
+  "timestamp": zod.string(),
+  "kind": zod.string(),
+  "reason": zod.string(),
+  "agents": zod.array(zod.string()),
+  "eventId": zod.string()
+})),
+  "evaluationMs": zod.number()
+})
+
+
+/**
+ * @summary Snapshot of a live session as a run record
+ */
+export const GetSwarmSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const GetSwarmSessionResponse = zod.object({
+  "id": zod.string(),
+  "scenario": zod.string(),
+  "provenance": zod.string(),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "timestamp": zod.string(),
+  "agentId": zod.string(),
+  "parentId": zod.string(),
+  "spanId": zod.string(),
+  "parentSpanId": zod.string(),
+  "action": zod.enum(['spawn', 'tool', 'message', 'wiki_edit']),
+  "channel": zod.enum(['in_band', 'out_of_band']),
+  "target": zod.string(),
+  "intent": zod.string(),
+  "intentVector": zod.array(zod.number()),
+  "depth": zod.number().int(),
+  "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
+  "rule": zod.string(),
+  "reason": zod.string(),
+  "executed": zod.boolean(),
+  "policyVersion": zod.number().int(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
+  "detail": zod.string().optional(),
+  "network": zod.string().optional(),
+  "reads": zod.enum(['', 'high', 'medium', 'low', 'untrusted']).optional(),
+  "write": zod.boolean().nullish(),
+  "resource": zod.string().optional(),
+  "mentions": zod.array(zod.string()).optional(),
+  "mode": zod.enum(['enforce', 'report-only']).optional(),
+  "violations": zod.array(zod.object({
+  "directive": zod.string(),
+  "attempted_action": zod.string(),
+  "detail": zod.string().optional(),
+  "enforced": zod.boolean()
+})).optional(),
+  "contaminated": zod.boolean().optional(),
+  "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
+})),
+  "alerts": zod.array(zod.object({
+  "id": zod.string(),
+  "timestamp": zod.string(),
+  "kind": zod.string(),
+  "reason": zod.string(),
+  "agents": zod.array(zod.string()),
+  "eventId": zod.string()
+})),
+  "policies": zod.array(zod.object({
+  "timestamp": zod.string(),
+  "version": zod.number().int(),
+  "blockedAgents": zod.array(zod.string()),
+  "reason": zod.string()
+})),
+  "report": zod.string(),
+  "rootAgent": zod.string(),
+  "startedAt": zod.string(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "mode": zod.enum(['enforce', 'report-only']).optional(),
+  "policyName": zod.string().optional(),
+  "policy": zod.record(zod.string(), zod.unknown()).optional(),
+  "window": zod.union([zod.object({
+  "dataset": zod.string(),
+  "exportedAt": zod.string(),
+  "citation": zod.string(),
+  "start": zod.string(),
+  "end": zod.string(),
+  "truncated": zod.boolean(),
+  "episodeId": zod.string().nullish(),
+  "day": zod.string(),
+  "regime": zod.string()
+}),zod.null()]).optional(),
+  "summary": zod.object({
+  "decisions": zod.record(zod.string(), zod.number().int()),
+  "blockedByRule": zod.record(zod.string(), zod.number().int()),
+  "advisories": zod.record(zod.string(), zod.number().int()),
+  "alertsByKind": zod.record(zod.string(), zod.number().int()),
+  "agents": zod.number().int(),
+  "writes": zod.number().int(),
+  "contaminatedWrites": zod.number().int(),
+  "networkHosts": zod.record(zod.string(), zod.number().int()),
+  "sharedResources": zod.record(zod.string(), zod.number().int())
+}).optional(),
+  "edges": zod.array(zod.object({
+  "source": zod.string(),
+  "target": zod.string(),
+  "weight": zod.number().int().describe('Number of executed actions from source to target'),
+  "actions": zod.record(zod.string(), zod.number().int()).describe('Weight broken down by action type'),
+  "first": zod.string(),
+  "last": zod.string()
+})).optional().describe('Executed interactions collapsed to one edge per directed pair, heaviest first')
+})
+
+
+/**
+ * @summary End a live session
+ */
+export const DeleteSwarmSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const DeleteSwarmSessionResponse = zod.void()
 
 
 /**

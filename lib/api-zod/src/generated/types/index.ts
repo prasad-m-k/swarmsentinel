@@ -6,10 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './callDecision';
+export * from './callDecisionDecision';
+export * from './callInput';
+export * from './callInputAction';
+export * from './callInputReads';
+export * from './demoInput';
 export * from './episode';
 export * from './episodeAlertsByKind';
 export * from './episodeBlockedByRule';
 export * from './healthStatus';
+export * from './launchInjectionDemo202';
 export * from './policyChange';
 export * from './replayWindow';
 export * from './runInput';
@@ -21,6 +28,13 @@ export * from './runSummaryBlockedByRule';
 export * from './runSummaryDecisions';
 export * from './runSummaryNetworkHosts';
 export * from './runSummarySharedResources';
+export * from './sessionCreated';
+export * from './sessionCreatedPolicy';
+export * from './sessionInput';
+export * from './sessionInputPolicy';
+export * from './sessionStreamMessage';
+export * from './sessionSummary';
+export * from './streamSwarmSessionParams';
 export * from './swarmAlert';
 export * from './swarmRun';
 export * from './swarmRunMode';

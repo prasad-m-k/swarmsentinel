@@ -20,8 +20,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CallDecision,
+  CallInput,
+  DemoInput,
   HealthStatus,
+  LaunchInjectionDemo202,
   RunInput,
+  SessionCreated,
+  SessionInput,
+  SessionSummary,
+  StreamSwarmSessionParams,
   SwarmRun,
   SwarmSources
 } from './api.schemas';
@@ -217,6 +225,588 @@ export function useGetSwarmSources<TData = Awaited<ReturnType<typeof getSwarmSou
 
 
 
+
+export const getListSwarmSessionsUrl = () => {
+
+
+
+
+  return `/api/swarm/sessions`
+}
+
+/**
+ * @summary Live sessions, newest first
+ */
+export const listSwarmSessions = async ( options?: Parameters<typeof customFetch>[1]): Promise<SessionSummary[]> => {
+
+  return customFetch<SessionSummary[]>(getListSwarmSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSwarmSessionsQueryKey = () => {
+    return [
+    `/api/swarm/sessions`
+    ] as const;
+    }
+
+
+export const getListSwarmSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listSwarmSessions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSwarmSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSwarmSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSwarmSessions>>> = ({ signal }) => listSwarmSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSwarmSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSwarmSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSwarmSessions>>>
+export type ListSwarmSessionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Live sessions, newest first
+ */
+
+export function useListSwarmSessions<TData = Awaited<ReturnType<typeof listSwarmSessions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSwarmSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSwarmSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSwarmSessionUrl = () => {
+
+
+
+
+  return `/api/swarm/sessions`
+}
+
+/**
+ * @summary Start a live session (stateful gateway and Sentinel, enforce mode)
+ */
+export const createSwarmSession = async (sessionInput: SessionInput, options?: Parameters<typeof customFetch>[1]): Promise<SessionCreated> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<SessionCreated>(getCreateSwarmSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sessionInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSwarmSessionMutationKey = () => ['createSwarmSession'] as const;
+
+export const getCreateSwarmSessionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSwarmSession>>, TError,CreateSwarmSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSwarmSession>>, TError,CreateSwarmSessionMutationVariables, TContext> => {
+
+const mutationKey = getCreateSwarmSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSwarmSession>>, CreateSwarmSessionMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSwarmSession(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSwarmSessionMutationResult = NonNullable<Awaited<ReturnType<typeof createSwarmSession>>>
+    export type CreateSwarmSessionMutationBody = BodyType<SessionInput>
+    export type CreateSwarmSessionMutationError = ErrorType<unknown>
+    export type CreateSwarmSessionMutationVariables = {data: BodyType<SessionInput>}
+
+    /**
+ * @summary Start a live session (stateful gateway and Sentinel, enforce mode)
+ */
+export const useCreateSwarmSession = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSwarmSession>>, TError,CreateSwarmSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSwarmSession>>,
+        TError,
+        CreateSwarmSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSwarmSessionMutationOptions(options));
+    }
+
+export const getStreamSwarmSessionUrl = (sessionId: string,
+    params?: StreamSwarmSessionParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/swarm/sessions/${sessionId}/stream?${stringifiedParams}` : `/api/swarm/sessions/${sessionId}/stream`
+}
+
+/**
+ * @summary Server-sent events: traces after `after`, with current alerts and revocations
+ */
+export const streamSwarmSession = async (sessionId: string,
+    params?: StreamSwarmSessionParams, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getStreamSwarmSessionUrl(sessionId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamSwarmSessionQueryKey = (sessionId: string,
+    params?: StreamSwarmSessionParams,) => {
+    return [
+    `/api/swarm/sessions/${sessionId}/stream`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getStreamSwarmSessionQueryOptions = <TData = Awaited<ReturnType<typeof streamSwarmSession>>, TError = ErrorType<void>>(sessionId: string,
+    params?: StreamSwarmSessionParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamSwarmSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamSwarmSessionQueryKey(sessionId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamSwarmSession>>> = ({ signal }) => streamSwarmSession(sessionId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamSwarmSession>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamSwarmSessionQueryResult = NonNullable<Awaited<ReturnType<typeof streamSwarmSession>>>
+export type StreamSwarmSessionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Server-sent events: traces after `after`, with current alerts and revocations
+ */
+
+export function useStreamSwarmSession<TData = Awaited<ReturnType<typeof streamSwarmSession>>, TError = ErrorType<void>>(
+ sessionId: string,
+    params?: StreamSwarmSessionParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamSwarmSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamSwarmSessionQueryOptions(sessionId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getLaunchInjectionDemoUrl = () => {
+
+
+
+
+  return `/api/swarm/demo/injection`
+}
+
+/**
+ * @summary Start the poisoned-invoice attack against a fresh live session
+ */
+export const launchInjectionDemo = async (demoInput: DemoInput, options?: Parameters<typeof customFetch>[1]): Promise<LaunchInjectionDemo202> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<LaunchInjectionDemo202>(getLaunchInjectionDemoUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(demoInput)
+  }
+);}
+
+
+
+
+
+export const getLaunchInjectionDemoMutationKey = () => ['launchInjectionDemo'] as const;
+
+export const getLaunchInjectionDemoMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof launchInjectionDemo>>, TError,LaunchInjectionDemoMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof launchInjectionDemo>>, TError,LaunchInjectionDemoMutationVariables, TContext> => {
+
+const mutationKey = getLaunchInjectionDemoMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof launchInjectionDemo>>, LaunchInjectionDemoMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  launchInjectionDemo(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LaunchInjectionDemoMutationResult = NonNullable<Awaited<ReturnType<typeof launchInjectionDemo>>>
+    export type LaunchInjectionDemoMutationBody = BodyType<DemoInput>
+    export type LaunchInjectionDemoMutationError = ErrorType<unknown>
+    export type LaunchInjectionDemoMutationVariables = {data: BodyType<DemoInput>}
+
+    /**
+ * @summary Start the poisoned-invoice attack against a fresh live session
+ */
+export const useLaunchInjectionDemo = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof launchInjectionDemo>>, TError,LaunchInjectionDemoMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof launchInjectionDemo>>,
+        TError,
+        LaunchInjectionDemoMutationVariables,
+        TContext
+      > => {
+      return useMutation(getLaunchInjectionDemoMutationOptions(options));
+    }
+
+export const getEvaluateSwarmCallUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}/evaluate`
+}
+
+/**
+ * @summary Decide one proposed agent action before it executes
+ */
+export const evaluateSwarmCall = async (sessionId: string,
+    callInput: CallInput, options?: Parameters<typeof customFetch>[1]): Promise<CallDecision> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CallDecision>(getEvaluateSwarmCallUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(callInput)
+  }
+);}
+
+
+
+
+
+export const getEvaluateSwarmCallMutationKey = () => ['evaluateSwarmCall'] as const;
+
+export const getEvaluateSwarmCallMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateSwarmCall>>, TError,EvaluateSwarmCallMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof evaluateSwarmCall>>, TError,EvaluateSwarmCallMutationVariables, TContext> => {
+
+const mutationKey = getEvaluateSwarmCallMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof evaluateSwarmCall>>, EvaluateSwarmCallMutationVariables> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  evaluateSwarmCall(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EvaluateSwarmCallMutationResult = NonNullable<Awaited<ReturnType<typeof evaluateSwarmCall>>>
+    export type EvaluateSwarmCallMutationBody = BodyType<CallInput>
+    export type EvaluateSwarmCallMutationError = ErrorType<void>
+    export type EvaluateSwarmCallMutationVariables = {sessionId: string;data: BodyType<CallInput>}
+
+    /**
+ * @summary Decide one proposed agent action before it executes
+ */
+export const useEvaluateSwarmCall = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof evaluateSwarmCall>>, TError,EvaluateSwarmCallMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof evaluateSwarmCall>>,
+        TError,
+        EvaluateSwarmCallMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEvaluateSwarmCallMutationOptions(options));
+    }
+
+export const getGetSwarmSessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}`
+}
+
+/**
+ * @summary Snapshot of a live session as a run record
+ */
+export const getSwarmSession = async (sessionId: string, options?: Parameters<typeof customFetch>[1]): Promise<SwarmRun> => {
+
+  return customFetch<SwarmRun>(getGetSwarmSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSwarmSessionQueryKey = (sessionId: string,) => {
+    return [
+    `/api/swarm/sessions/${sessionId}`
+    ] as const;
+    }
+
+
+export const getGetSwarmSessionQueryOptions = <TData = Awaited<ReturnType<typeof getSwarmSession>>, TError = ErrorType<void>>(sessionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSwarmSessionQueryKey(sessionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSwarmSession>>> = ({ signal }) => getSwarmSession(sessionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSwarmSession>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSwarmSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getSwarmSession>>>
+export type GetSwarmSessionQueryError = ErrorType<void>
+
+
+/**
+ * @summary Snapshot of a live session as a run record
+ */
+
+export function useGetSwarmSession<TData = Awaited<ReturnType<typeof getSwarmSession>>, TError = ErrorType<void>>(
+ sessionId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSwarmSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteSwarmSessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}`
+}
+
+/**
+ * @summary End a live session
+ */
+export const deleteSwarmSession = async (sessionId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSwarmSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSwarmSessionMutationKey = () => ['deleteSwarmSession'] as const;
+
+export const getDeleteSwarmSessionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSwarmSession>>, TError,DeleteSwarmSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSwarmSession>>, TError,DeleteSwarmSessionMutationVariables, TContext> => {
+
+const mutationKey = getDeleteSwarmSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSwarmSession>>, DeleteSwarmSessionMutationVariables> = (props) => {
+          const {sessionId} = props ?? {};
+
+          return  deleteSwarmSession(sessionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSwarmSessionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSwarmSession>>>
+
+    export type DeleteSwarmSessionMutationError = ErrorType<void>
+    export type DeleteSwarmSessionMutationVariables = {sessionId: string}
+
+    /**
+ * @summary End a live session
+ */
+export const useDeleteSwarmSession = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSwarmSession>>, TError,DeleteSwarmSessionMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSwarmSession>>,
+        TError,
+        DeleteSwarmSessionMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteSwarmSessionMutationOptions(options));
+    }
 
 export const getHealthCheckUrl = () => {
 

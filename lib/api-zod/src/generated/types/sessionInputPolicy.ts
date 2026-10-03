@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
+export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];
 
 
-export const TraceSource = {
-  synthetic: 'synthetic',
+export const SessionInputPolicy = {
+  mock: 'mock',
   'ai-village': 'ai-village',
-  live: 'live',
 } as const;

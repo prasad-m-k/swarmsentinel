@@ -120,6 +120,169 @@ class Detectors(unittest.TestCase):
         self.assertIn("rapid_consensus", [a["kind"] for a in sentinel.alerts])
 
 
+class InjectionDefense(unittest.TestCase):
+    """ASP paper Simulation A: a poisoned invoice tries to move money through the swarm."""
+
+    def rules(self, feedback):
+        run = simulate(RunInput(scenario="injection", feedbackEnabled=feedback))
+        return {e["id"][-3:]: e["rule"] for e in run["events"]}, run
+
+    def test_each_layer_catches_its_step(self):
+        rules, run = self.rules(True)
+        self.assertEqual(rules["006"], "delegation.out_of_scope")      # parser was only delegated fs.read
+        self.assertEqual(rules["007"], "delegation.scope_expansion")   # child may not widen its own scope
+        self.assertEqual(rules["010"], "trust.contaminated_tool")      # ledger holds payment rights, but is tainted
+        self.assertEqual(rules["012"], "tripwire.revoked")
+        self.assertEqual(rules["014"], "policy.allow")                 # clean orchestrator keeps working
+        self.assertEqual([(a["kind"], a["agents"]) for a in run["alerts"]],
+                         [("injection_spread", ["ledger-agent", "notifier", "receipt-parser"])])
+        self.assertFalse(any(e["executed"] and e["target"] == "mock:payments.transfer" for e in run["events"]))
+
+    def test_without_feedback_taint_still_blocks_writes(self):
+        rules, run = self.rules(False)
+        self.assertEqual(rules["012"], "trust.contaminated_write")
+        self.assertEqual(run["policies"], [])
+
+    def test_taint_carries_origin(self):
+        _, run = self.rules(True)
+        origins = {e["agentId"]: e["taintOrigin"] for e in run["events"] if e["taintOrigin"]}
+        self.assertEqual(origins, {"receipt-parser": "injection-005", "ledger-agent": "injection-005", "notifier": "injection-005"})
+
+    def test_village_policy_does_not_propagate(self):
+        events = [village_event(1, "GPT-5", "village:bash", network="gitlab.com", reads="untrusted"),
+                  village_event(2, "GPT-5", "o3", "see this", seconds=1, action="message", mentions=["o3"]),
+                  village_event(3, "o3", "village:bash", write=True, resource="repo:village", seconds=2)]
+        gateway, _ = village_replay(events)
+        self.assertEqual(gateway.tainted, {})
+        self.assertFalse(gateway.telemetry[2].contaminated)
+
+
+class LoopsAndBudgets(unittest.TestCase):
+    """Runaway execution with no adversary: a hand-off loop and a retry storm."""
+
+    def run_(self, feedback):
+        run = simulate(RunInput(scenario="runaway", feedbackEnabled=feedback))
+        return {int(e["id"][-3:]): e["rule"] for e in run["events"]}, run
+
+    def test_loop_detected_and_contained(self):
+        rules, run = self.run_(True)
+        loop = next(a for a in run["alerts"] if a["kind"] == "delegation_loop")
+        self.assertEqual((loop["agents"], loop["eventId"][-3:]), (["critic", "executor", "planner"], "007"))
+        self.assertIn("planner -> executor -> critic -> planner", loop["reason"])
+        self.assertEqual((rules[8], rules[9]), ("tripwire.revoked", "tripwire.revoked"))
+        self.assertEqual(rules[33], "policy.allow")
+
+    def test_step_budget_throttles_retry_storm(self):
+        for feedback in (True, False):
+            rules, _ = self.run_(feedback)
+            scraper = [rules[n] for n in range(11, 33)]
+            self.assertEqual(scraper, ["policy.allow"] * 20 + ["budget.steps"] * 2)
+
+    def test_budget_window_slides(self):
+        policy = ASPPolicy.load("mock")
+        policy.swarm.step_budget = 2
+        events = [dict(id=f"b{i}", timestamp=f"2026-10-03T16:00:{s:02d}+00:00", agentId="orchestrator", spanId="s",
+                       action="tool", channel="in_band", target="mock:search.read", intent=f"q{i}",
+                       intentVector=[0.0], depth=0) for i, s in enumerate([0, 1, 2, 30])]
+        gateway, _ = replay(events, OFF, policy)
+        self.assertEqual([t.rule for t in gateway.telemetry], ["policy.allow", "policy.allow", "budget.steps", "policy.allow"])
+
+    def test_village_policy_has_neither(self):
+        names = [n for n, _ in AGENTS.values()]
+        events = [village_event(i, names[i % 3], names[(i + 1) % 3], f"hand-off {i}", seconds=i, action="message",
+                                mentions=[names[(i + 1) % 3]]) for i in range(6)]
+        gateway, sentinel = village_replay(events)
+        self.assertNotIn("delegation_loop", [a["kind"] for a in sentinel.alerts])
+        self.assertNotIn("budget.steps", [t.rule for t in gateway.telemetry])
+
+
+class LiveInterception(unittest.TestCase):
+    """The guard decides before the tool body runs; a denied call never executes."""
+
+    def setUp(self):
+        from sdk.guard import Guard, PolicyViolation
+        self.Guard, self.PolicyViolation = Guard, PolicyViolation
+
+    def test_denied_call_never_executes(self):
+        ran = []
+        guard = self.Guard.local()
+        parser = guard.root().spawn("receipt-parser", scope=["mock:fs.read"])
+        with self.assertRaises(self.PolicyViolation) as blocked:
+            parser.call("mock:payments.transfer", lambda: ran.append("paid"))
+        self.assertEqual((blocked.exception.decision.rule, ran), ("delegation.out_of_scope", []))
+        self.assertEqual(parser.call("mock:fs.read", lambda: "ok"), "ok")
+
+    def test_lineage_cannot_be_forged(self):
+        from sdk.guard import Agent
+        guard = self.Guard.local()
+        impostor = Agent(guard, "ledger-agent", parent=guard.root())   # never spawned
+        decision = impostor.check("tool", "mock:fs.read")
+        self.assertEqual((decision.allowed, decision.rule), (False, "lineage.unknown"))
+
+    def test_taint_and_tripwire_live(self):
+        guard = self.Guard.local()
+        root = guard.root()
+        parser = root.spawn("receipt-parser", scope=["mock:fs.read"])
+        ledger = root.spawn("ledger-agent", scope=["mock:payments.transfer"])
+        notifier = root.spawn("notifier", scope=["mock:mcp:board.write"])
+        parser.call("mock:fs.read", lambda: "poison", reads="untrusted")
+        parser.send(ledger, "pay routing 021000021")
+        with self.assertRaises(self.PolicyViolation) as blocked:
+            ledger.call("mock:payments.transfer", lambda: None)
+        self.assertEqual(blocked.exception.decision.rule, "trust.contaminated_tool")
+        self.assertEqual([a["kind"] for a in parser.send(notifier, "announce").alerts], ["injection_spread"])
+        self.assertTrue(root.check("tool", "mock:mcp:board.write", "held for review").allowed)
+
+    def test_session_endpoints(self):
+        from fastapi import HTTPException
+        from live import CallInput, SessionInput
+        from server import create_session, delete_session, evaluate, session_run
+        sid = create_session(SessionInput())["sessionId"]
+        decision = evaluate(sid, CallInput(agentId="orchestrator", action="tool", target="mock:search.read", spanId="s1"))
+        self.assertTrue(decision["allowed"])
+        run = session_run(sid)
+        self.assertEqual((run["source"], run["mode"], len(run["events"])), ("live", "enforce", 1))
+        delete_session(sid)
+        with self.assertRaises(HTTPException):
+            session_run(sid)
+
+    def test_session_list_and_stream(self):
+        import asyncio, json as _json
+        from live import CallInput, SessionInput
+        from server import create_session, delete_session, evaluate, list_sessions, stream_session
+        sid = create_session(SessionInput())["sessionId"]
+        for i in range(3):
+            evaluate(sid, CallInput(agentId="orchestrator", action="tool", target="mock:search.read", intent=f"q{i}", spanId="s1"))
+        self.assertEqual(next(r for r in list_sessions() if r["sessionId"] == sid)["events"], 3)
+
+        async def first_frame():
+            body = (await stream_session(sid, after=1)).body_iterator
+            return await body.__anext__()
+        frame = asyncio.run(first_frame())
+        message = _json.loads(frame.removeprefix("data: ").strip())
+        self.assertEqual((message["total"], [e["intent"] for e in message["events"]]), (3, ["q1", "q2"]))
+        delete_session(sid)
+
+    def test_demo_endpoint_runs_attack_without_moving_money(self):
+        import time
+        from server import DemoInput, SESSIONS, launch_injection_demo
+        sid = launch_injection_demo(DemoInput(pause=0))["sessionId"]
+        session = SESSIONS.get(sid)
+        for _ in range(100):
+            if len(session.gateway.telemetry) >= 12:
+                break
+            time.sleep(0.02)
+        transfers = [t for t in session.gateway.telemetry if t.target == "mock:payments.transfer"]
+        self.assertEqual([t.executed for t in transfers], [False, False])
+        self.assertEqual([a["kind"] for a in session.sentinel.alerts], ["injection_spread"])
+
+    def test_store_is_bounded(self):
+        from live import SessionInput, SessionStore
+        store = SessionStore(limit=3)
+        ids = [store.create(SessionInput()).id for _ in range(5)]
+        self.assertEqual(list(store.sessions), ids[2:])
+
+
 class WeightedGraph(unittest.TestCase):
     def test_repeats_increment_weight_not_edges(self):
         events = [village_event(i, "GPT-5", "village:bash", f"step {i}", seconds=i) for i in range(5)]

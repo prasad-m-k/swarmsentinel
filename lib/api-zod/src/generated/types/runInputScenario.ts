@@ -12,5 +12,7 @@ export type RunInputScenario = typeof RunInputScenario[keyof typeof RunInputScen
 export const RunInputScenario = {
   normal: 'normal',
   attack: 'attack',
+  injection: 'injection',
+  runaway: 'runaway',
   'ai-village': 'ai-village',
 } as const;

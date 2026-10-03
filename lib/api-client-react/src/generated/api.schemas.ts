@@ -11,6 +11,8 @@ export type RunInputScenario = typeof RunInputScenario[keyof typeof RunInputScen
 export const RunInputScenario = {
   normal: 'normal',
   attack: 'attack',
+  injection: 'injection',
+  runaway: 'runaway',
   'ai-village': 'ai-village',
 } as const;
 
@@ -81,6 +83,7 @@ export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
 export const TraceSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
+  live: 'live',
 } as const;
 
 export type TraceReads = typeof TraceReads[keyof typeof TraceReads];
@@ -140,6 +143,10 @@ export interface Trace {
   mode?: TraceMode;
   violations?: Violation[];
   contaminated?: boolean;
+  /** Event id of the untrusted read this context descends from; empty if clean */
+  taintOrigin?: string;
+  /** Spawn only: tool patterns delegated to the child */
+  scope?: string[];
 }
 
 export interface SwarmAlert {
@@ -164,6 +171,7 @@ export type SwarmRunSource = typeof SwarmRunSource[keyof typeof SwarmRunSource];
 export const SwarmRunSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
+  live: 'live',
 } as const;
 
 export type SwarmRunMode = typeof SwarmRunMode[keyof typeof SwarmRunMode];
@@ -288,7 +296,131 @@ export interface SwarmSources {
   policies: SwarmSourcesPolicies;
 }
 
+export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];
+
+
+export const SessionInputPolicy = {
+  mock: 'mock',
+  'ai-village': 'ai-village',
+} as const;
+
+export interface SessionInput {
+  policy?: SessionInputPolicy;
+  feedbackEnabled?: boolean;
+  root?: string;
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  created: string;
+  policyName: string;
+  root: string;
+  label: string;
+  events: number;
+  alerts: number;
+}
+
+export interface SessionStreamMessage {
+  events: Trace[];
+  alerts: SwarmAlert[];
+  policies: PolicyChange[];
+  total: number;
+}
+
+export interface DemoInput {
+  feedbackEnabled?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  pause?: number;
+}
+
+export type SessionCreatedPolicy = { [key: string]: unknown };
+
+export interface SessionCreated {
+  sessionId: string;
+  policyName: string;
+  root: string;
+  feedbackEnabled: boolean;
+  policy: SessionCreatedPolicy;
+}
+
+export type CallInputAction = typeof CallInputAction[keyof typeof CallInputAction];
+
+
+export const CallInputAction = {
+  spawn: 'spawn',
+  tool: 'tool',
+  message: 'message',
+} as const;
+
+export type CallInputReads = typeof CallInputReads[keyof typeof CallInputReads];
+
+
+export const CallInputReads = {
+  '': '',
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+  untrusted: 'untrusted',
+} as const;
+
+export interface CallInput {
+  agentId: string;
+  action: CallInputAction;
+  target: string;
+  intent?: string;
+  parentId?: string;
+  spanId: string;
+  parentSpanId?: string;
+  detail?: string;
+  network?: string;
+  reads?: CallInputReads;
+  /** @nullable */
+  write?: boolean | null;
+  resource?: string;
+  mentions?: string[];
+  scope?: string[];
+  /** @nullable */
+  timestamp?: string | null;
+}
+
+export type CallDecisionDecision = typeof CallDecisionDecision[keyof typeof CallDecisionDecision];
+
+
+export const CallDecisionDecision = {
+  allow: 'allow',
+  throttle: 'throttle',
+  drop: 'drop',
+  observed: 'observed',
+} as const;
+
+export interface CallDecision {
+  eventId: string;
+  allowed: boolean;
+  decision: CallDecisionDecision;
+  rule: string;
+  reason: string;
+  policyVersion: number;
+  taintOrigin: string;
+  violations: Violation[];
+  alerts: SwarmAlert[];
+  evaluationMs: number;
+}
+
 export interface HealthStatus {
   status: string;
 }
+
+export type StreamSwarmSessionParams = {
+/**
+ * @minimum 0
+ */
+after?: number;
+};
+
+export type LaunchInjectionDemo202 = {
+  sessionId: string;
+};
 

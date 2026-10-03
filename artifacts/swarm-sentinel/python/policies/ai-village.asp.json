@@ -32,7 +32,9 @@
     "user-input": "medium",
     "tool-response": "low",
     "retrieved-document": "untrusted",
-    "contaminated-write": "report"
+    "contaminated-write": "report",
+    "contaminated-deny": [],
+    "propagate-via-messages": false
   },
   "delegation": {
     "sub-agents": "inherit-and-restrict",
@@ -45,13 +47,16 @@
     "window-seconds": 600,
     "repeated-intent": { "limit": 5, "min-agents": 3, "actions": ["tool", "message"] },
     "write-cap": 12,
+    "step-budget": 0,
     "tripwires": {
       "fanout-children": 4,
       "shared-state-agents": 4,
       "consensus-min-cluster": 4,
       "consensus-density": 0.6,
       "echo-agents": 4,
-      "echo-similarity": 0.6
+      "echo-similarity": 0.6,
+      "taint-agents": 0,
+      "delegation-loop": false
     }
   }
 }
