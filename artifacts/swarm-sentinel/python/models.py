@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class RunInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scenario: Literal["normal", "attack", "injection", "ai-village"]
+    scenario: Literal["normal", "attack", "injection", "runaway", "ai-village"]
     feedbackEnabled: bool = True
     # Omitted limits fall back to the scenario's ASP policy declaration.
     maxDepth: Optional[int] = Field(default=None, ge=1, le=10)

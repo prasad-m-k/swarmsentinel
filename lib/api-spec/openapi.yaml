@@ -165,7 +165,7 @@ components:
       type: object
       required: [scenario, feedbackEnabled]
       properties:
-        scenario: { type: string, enum: [normal, attack, injection, ai-village] }
+        scenario: { type: string, enum: [normal, attack, injection, runaway, ai-village] }
         feedbackEnabled: { type: boolean }
         maxDepth: { type: integer, minimum: 1, maximum: 10, description: Defaults to the scenario policy }
         semanticLimit: { type: integer, minimum: 2, maximum: 20, description: Defaults to the scenario policy }

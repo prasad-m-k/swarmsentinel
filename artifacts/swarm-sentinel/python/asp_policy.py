@@ -66,12 +66,14 @@ class Tripwires(_Strict):
     echo_agents: int = Field(default=0, alias="echo-agents", description="0 disables the echo detector")
     echo_similarity: float = Field(default=.6, alias="echo-similarity")
     taint_agents: int = Field(default=0, alias="taint-agents", description="0 disables the injection-spread detector")
+    delegation_loop: bool = Field(default=False, alias="delegation-loop")
 
 
 class Swarm(_Strict):
     window_seconds: int = Field(default=10, alias="window-seconds", ge=1)
     repeated_intent: RepeatedIntent = Field(default_factory=RepeatedIntent, alias="repeated-intent")
     write_cap: int = Field(default=6, alias="write-cap", ge=1)
+    step_budget: int = Field(default=0, alias="step-budget", ge=0, description="max actions per agent per window; 0 disables")
     tripwires: Tripwires = Field(default_factory=Tripwires)
 
 

@@ -6,12 +6,12 @@ import {
   Plus, Minus, Maximize2, FileJson, FlaskConical, Radar,
 } from 'lucide-react';
 
-type Scenario = 'normal' | 'attack' | 'injection' | 'ai-village' | 'live';
+type Scenario = 'normal' | 'attack' | 'injection' | 'runaway' | 'ai-village' | 'live';
 type LiveStatus = 'idle' | 'connecting' | 'streaming' | 'closed' | 'error';
 const LIVE = '#b48cff';
 type PolicyDecl = { delegation: { 'max-depth': number }; swarm: { 'write-cap': number; 'repeated-intent': { limit: number } } };
 
-const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['injection', 'Prompt Injection'], ['ai-village', 'AI Village'], ['live', 'Live']];
+const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['injection', 'Prompt Injection'], ['runaway', 'Runaway Loop'], ['ai-village', 'AI Village'], ['live', 'Live']];
 const SPEEDS = [1, 10, 50];
 const TICK_BINS = 320;
 const FEED_LIMIT = 400;
@@ -372,7 +372,7 @@ export default function Dashboard() {
         <div className="flex-1" />
         <div className="flex items-center border border-border" role="tablist">
           {SCENARIOS.map(([s, label]) => {
-            const col = s === 'attack' ? C.bad : s === 'injection' ? C.warn : s === 'ai-village' ? C.info : s === 'live' ? LIVE : C.ok;
+            const col = s === 'attack' || s === 'runaway' ? C.bad : s === 'injection' ? C.warn : s === 'ai-village' ? C.info : s === 'live' ? LIVE : C.ok;
             const off = s === 'ai-village' && !village?.available;
             return (
               <button key={s} data-testid={`button-scenario-${s}`} onClick={() => chooseScenario(s)} disabled={off}
