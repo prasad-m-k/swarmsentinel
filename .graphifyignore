@@ -1,0 +1,23 @@
+# Scope for the graphify knowledge graph: SwarmSentinel engine, dashboard,
+# API contract and generated clients, docs. Starter and demo apps are out.
+/artifacts/mockup-sandbox/
+/artifacts/swarm-sentinel-deck/
+/artifacts/api-server/
+/scripts/
+**/components/ui/
+/replit.md
+/pnpm-workspace.yaml
+/package.json
+/tsconfig*.json
+
+# Never index raw or derived dataset records, build output, or graphify's own files.
+/download-hugginface/
+/data/
+/graphify-out/
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.tsbuildinfo
+/attached_assets/
+.DS_Store

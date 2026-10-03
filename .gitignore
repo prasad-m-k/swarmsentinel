@@ -57,3 +57,6 @@ __pycache__/
 # AI Village dataset (gated research data; never commit raw or derived records)
 /download-hugginface/
 /data/ai-village/
+
+# graphify knowledge-graph cache and outputs (local)
+/graphify-out/
