@@ -38,3 +38,5 @@ export * from './traceSource';
 export * from './villageSource';
 export * from './villageSourceEvents';
 export * from './violation';
+export * from './weightedEdge';
+export * from './weightedEdgeActions';

@@ -13,6 +13,7 @@ import type { SwarmRunMode } from './swarmRunMode';
 import type { SwarmRunPolicy } from './swarmRunPolicy';
 import type { SwarmRunSource } from './swarmRunSource';
 import type { Trace } from './trace';
+import type { WeightedEdge } from './weightedEdge';
 
 export interface SwarmRun {
   id: string;
@@ -30,4 +31,6 @@ export interface SwarmRun {
   policy?: SwarmRunPolicy;
   window?: ReplayWindow | null;
   summary?: RunSummary;
+  /** Executed interactions collapsed to one edge per directed pair, heaviest first */
+  edges?: WeightedEdge[];
 }

@@ -1,5 +1,5 @@
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import datetime
 import networkx as nx
 
@@ -19,7 +19,9 @@ class Sentinel:
         self.window = policy.swarm.window_seconds
         self.limits = policy.swarm.tripwires
         self.graph = nx.DiGraph()
-        self.communication = []
+        # Windowed communication graph: edge weight = messages from a to b still inside the window.
+        self.comm_graph = nx.DiGraph()
+        self.communication = deque()
         self.chat = []
         self.edits = defaultdict(list)
         self.fanout = defaultdict(set)
@@ -28,15 +30,28 @@ class Sentinel:
         self.recent = defaultdict(list)
         self.policy_changes = []
 
+    def _link(self, a, b, delta):
+        """Adjust one windowed communication edge; drop it (and orphaned agents) when its weight reaches zero."""
+        weight = self.comm_graph.get_edge_data(a, b, {}).get("weight", 0) + delta
+        if weight > 0:
+            self.comm_graph.add_edge(a, b, weight=weight)
+            return
+        self.comm_graph.remove_edge(a, b)
+        self.comm_graph.remove_nodes_from([n for n in (a, b) if self.comm_graph.degree(n) == 0])
+
     def _consensus(self, now, trace):
-        edges = [(trace.agentId, m) for m in trace.mentions] or [(trace.agentId, trace.target)]
-        self.communication = [(t, a, b) for t, a, b in self.communication if now-t <= self.window]
-        self.communication.extend((now, a, b) for a, b in edges if a != b)
-        graph = nx.DiGraph()
-        graph.add_edges_from((a, b) for _, a, b in self.communication)
+        while self.communication and now - self.communication[0][0] > self.window:
+            _, a, b = self.communication.popleft()
+            self._link(a, b, -1)
+        for b in trace.mentions or [trace.target]:
+            if b != trace.agentId:
+                self.communication.append((now, trace.agentId, b))
+                self._link(trace.agentId, b, +1)
+        graph = self.comm_graph
         for cluster in nx.strongly_connected_components(graph):
             if len(cluster) < self.limits.consensus_min_cluster:
                 continue
+            # Density counts distinct directed pairs; weight records how often each pair spoke.
             density = nx.density(graph.subgraph(cluster))
             if density >= self.limits.consensus_density:
                 yield ("rapid_consensus", f"Reciprocal cluster of {len(cluster)} agents; directed density {density:.2f} within {self.window} seconds", sorted(cluster), tuple(sorted(cluster)))
@@ -63,7 +78,14 @@ class Sentinel:
         now = datetime.fromisoformat(trace.timestamp).timestamp()
         self.graph.add_node(trace.agentId, kind="agent")
         self.graph.add_node(trace.target, kind="agent" if trace.action in {"spawn", "message"} else "resource")
-        self.graph.add_edge(trace.agentId, trace.target, action=trace.action)
+        if self.graph.has_edge(trace.agentId, trace.target):
+            edge = self.graph.edges[trace.agentId, trace.target]
+            edge["weight"] += 1
+            edge["actions"][trace.action] += 1
+            edge["last"] = trace.timestamp
+        else:
+            self.graph.add_edge(trace.agentId, trace.target, weight=1, actions=Counter({trace.action: 1}),
+                                first=trace.timestamp, last=trace.timestamp)
         candidates = []
         if trace.action == "spawn":
             self.fanout[trace.agentId].add(trace.target)
@@ -96,3 +118,9 @@ class Sentinel:
                     timestamp=trace.timestamp, version=gateway.version,
                     blockedAgents=sorted(gateway.revoked), reason=reason,
                 ))
+
+    def weighted_edges(self):
+        """Executed interactions collapsed to one edge per directed pair, heaviest first."""
+        edges = [dict(source=a, target=b, weight=d["weight"], actions=dict(d["actions"]), first=d["first"], last=d["last"])
+                 for a, b, d in self.graph.edges(data=True)]
+        return sorted(edges, key=lambda e: (-e["weight"], e["source"], e["target"]))

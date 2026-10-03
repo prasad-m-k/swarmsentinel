@@ -117,7 +117,15 @@ export const SimulateSwarmResponse = zod.object({
   "contaminatedWrites": zod.number().int(),
   "networkHosts": zod.record(zod.string(), zod.number().int()),
   "sharedResources": zod.record(zod.string(), zod.number().int())
-}).optional()
+}).optional(),
+  "edges": zod.array(zod.object({
+  "source": zod.string(),
+  "target": zod.string(),
+  "weight": zod.number().int().describe('Number of executed actions from source to target'),
+  "actions": zod.record(zod.string(), zod.number().int()).describe('Weight broken down by action type'),
+  "first": zod.string(),
+  "last": zod.string()
+})).optional().describe('Executed interactions collapsed to one edge per directed pair, heaviest first')
 })
 
 

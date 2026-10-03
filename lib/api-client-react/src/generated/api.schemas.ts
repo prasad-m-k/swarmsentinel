@@ -213,6 +213,22 @@ export interface RunSummary {
   sharedResources: RunSummarySharedResources;
 }
 
+/**
+ * Weight broken down by action type
+ */
+export type WeightedEdgeActions = {[key: string]: number};
+
+export interface WeightedEdge {
+  source: string;
+  target: string;
+  /** Number of executed actions from source to target */
+  weight: number;
+  /** Weight broken down by action type */
+  actions: WeightedEdgeActions;
+  first: string;
+  last: string;
+}
+
 export interface SwarmRun {
   id: string;
   scenario: string;
@@ -229,6 +245,8 @@ export interface SwarmRun {
   policy?: SwarmRunPolicy;
   window?: ReplayWindow | null;
   summary?: RunSummary;
+  /** Executed interactions collapsed to one edge per directed pair, heaviest first */
+  edges?: WeightedEdge[];
 }
 
 export type EpisodeAlertsByKind = {[key: string]: number};

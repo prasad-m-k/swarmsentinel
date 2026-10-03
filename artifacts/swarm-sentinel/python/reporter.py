@@ -49,6 +49,14 @@ def markdown_report(run, settings):
     if len(blocked) > TABLE_LIMIT // 3:
         lines.append(f"- … {len(blocked) - TABLE_LIMIT // 3} more in the JSON trace export")
     lines.extend(f"- Policy v{p['version']}: {p['reason']}; revoked: {', '.join(p['blockedAgents'])}" for p in run["policies"])
+    lines += ["", "## Heaviest interactions", "",
+              "Executed actions collapsed to one edge per actor and target; weight counts repeats.", "",
+              "| Actor | Target | Weight | Actions |", "|---|---|---|---|"]
+    for e in run["edges"][:15]:
+        actions = ", ".join(f"{a} {n}" for a, n in sorted(e["actions"].items(), key=lambda kv: -kv[1]))
+        lines.append(f"| {_cell(e['source'])} | {_cell(e['target'])} | {e['weight']} | {actions} |")
+    if not run["edges"]:
+        lines.append("| none | | | |")
     lines += ["", "## Chronological flight recorder", "",
               "| UTC time | Actor | Action / target | Decision | Rule | Source |",
               "|---|---|---|---|---|---|"]
