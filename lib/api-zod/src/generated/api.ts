@@ -163,6 +163,21 @@ export const GetSwarmSourcesResponse = zod.object({
 
 
 /**
+ * @summary Live sessions, newest first
+ */
+export const ListSwarmSessionsResponseItem = zod.object({
+  "sessionId": zod.string(),
+  "created": zod.string(),
+  "policyName": zod.string(),
+  "root": zod.string(),
+  "label": zod.string(),
+  "events": zod.number().int(),
+  "alerts": zod.number().int()
+})
+export const ListSwarmSessionsResponse = zod.array(ListSwarmSessionsResponseItem)
+
+
+/**
  * @summary Start a live session (stateful gateway and Sentinel, enforce mode)
  */
 export const createSwarmSessionBodyPolicyDefault = `mock`;
@@ -181,6 +196,44 @@ export const CreateSwarmSessionResponse = zod.object({
   "root": zod.string(),
   "feedbackEnabled": zod.boolean(),
   "policy": zod.record(zod.string(), zod.unknown())
+})
+
+
+/**
+ * @summary Server-sent events: traces after `after`, with current alerts and revocations
+ */
+export const StreamSwarmSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const streamSwarmSessionQueryAfterMin = 0;
+
+
+
+export const StreamSwarmSessionQueryParams = zod.object({
+  "after": zod.coerce.number().int().min(streamSwarmSessionQueryAfterMin).optional()
+})
+
+export const StreamSwarmSessionResponse = zod.unknown()
+
+
+/**
+ * @summary Start the poisoned-invoice attack against a fresh live session
+ */
+export const launchInjectionDemoBodyFeedbackEnabledDefault = true;
+export const launchInjectionDemoBodyPauseDefault = 1.2;
+export const launchInjectionDemoBodyPauseMin = 0;
+export const launchInjectionDemoBodyPauseMax = 5;
+
+
+
+export const LaunchInjectionDemoBody = zod.object({
+  "feedbackEnabled": zod.boolean().default(launchInjectionDemoBodyFeedbackEnabledDefault),
+  "pause": zod.number().min(launchInjectionDemoBodyPauseMin).max(launchInjectionDemoBodyPauseMax).default(launchInjectionDemoBodyPauseDefault)
+})
+
+export const LaunchInjectionDemoResponse = zod.object({
+  "sessionId": zod.string()
 })
 
 

@@ -75,9 +75,9 @@ class _Remote:
 
 
 class _Local:
-    def __init__(self):
+    def __init__(self, store=None):
         from live import CallInput, SessionInput, SessionStore   # engine modules; only needed in-process
-        self.CallInput, self.SessionInput, self.store = CallInput, SessionInput, SessionStore()
+        self.CallInput, self.SessionInput, self.store = CallInput, SessionInput, store or SessionStore()
 
     def create(self, spec):
         return self.store.create(self.SessionInput(**spec)).id
@@ -87,9 +87,9 @@ class _Local:
 
 
 class Guard:
-    def __init__(self, transport, policy="mock", feedback=True, root="orchestrator", on_decision=None):
+    def __init__(self, transport, policy="mock", feedback=True, root="orchestrator", on_decision=None, session_id=None):
         self.transport, self.root_name, self.on_decision = transport, root, on_decision
-        self.session_id = transport.create({"policy": policy, "feedbackEnabled": feedback, "root": root})
+        self.session_id = session_id or transport.create({"policy": policy, "feedbackEnabled": feedback, "root": root})
 
     @classmethod
     def remote(cls, base_url, timeout=5.0, **kwargs):

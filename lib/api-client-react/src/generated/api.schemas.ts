@@ -309,6 +309,32 @@ export interface SessionInput {
   root?: string;
 }
 
+export interface SessionSummary {
+  sessionId: string;
+  created: string;
+  policyName: string;
+  root: string;
+  label: string;
+  events: number;
+  alerts: number;
+}
+
+export interface SessionStreamMessage {
+  events: Trace[];
+  alerts: SwarmAlert[];
+  policies: PolicyChange[];
+  total: number;
+}
+
+export interface DemoInput {
+  feedbackEnabled?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 5
+     */
+  pause?: number;
+}
+
 export type SessionCreatedPolicy = { [key: string]: unknown };
 
 export interface SessionCreated {
@@ -385,4 +411,15 @@ export interface CallDecision {
 export interface HealthStatus {
   status: string;
 }
+
+export type StreamSwarmSessionParams = {
+/**
+ * @minimum 0
+ */
+after?: number;
+};
+
+export type LaunchInjectionDemo202 = {
+  sessionId: string;
+};
 

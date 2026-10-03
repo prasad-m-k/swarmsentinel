@@ -92,4 +92,5 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 ## Known issues
 
 - Radar weight labels crowd around hub nodes such as `village:bash` in busy AI Village episodes; hover a node to isolate its edges.
+- Live mode in `vite dev`: a hot reload that swaps `dashboard.tsx` can orphan an open EventSource for up to a minute, so new streams queue behind it (HTTP/1.1 connection limit). Reload the page; production builds are unaffected.
 - Office apps are sandboxed: to export a .pptx to PDF via AppleScript, work inside `~/Library/Containers/com.microsoft.Powerpoint/Data/`, not `/tmp`.

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useGetSwarmSources, useSimulateSwarm } from '@workspace/api-client-react';
-import type { Episode, RunInput, SwarmRun, Trace } from '@workspace/api-client-react';
+import { getSwarmSession, launchInjectionDemo, listSwarmSessions, useGetSwarmSources, useSimulateSwarm } from '@workspace/api-client-react';
+import type { Episode, RunInput, SessionStreamMessage, SessionSummary, SwarmRun, Trace } from '@workspace/api-client-react';
 import {
   Play, Pause, StepForward, RotateCcw, Download, ShieldAlert, ExternalLink,
   Plus, Minus, Maximize2, FileJson, FlaskConical, Radar,
 } from 'lucide-react';
 
-type Scenario = 'normal' | 'attack' | 'injection' | 'ai-village';
+type Scenario = 'normal' | 'attack' | 'injection' | 'ai-village' | 'live';
+type LiveStatus = 'idle' | 'connecting' | 'streaming' | 'closed' | 'error';
+const LIVE = '#b48cff';
 type PolicyDecl = { delegation: { 'max-depth': number }; swarm: { 'write-cap': number; 'repeated-intent': { limit: number } } };
 
-const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['injection', 'Prompt Injection'], ['ai-village', 'AI Village']];
+const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['injection', 'Prompt Injection'], ['ai-village', 'AI Village'], ['live', 'Live']];
 const SPEEDS = [1, 10, 50];
 const TICK_BINS = 320;
 const FEED_LIMIT = 400;
@@ -152,6 +154,7 @@ export default function Dashboard() {
 
   const chooseScenario = (sc: Scenario) => {
     setScenario(sc);
+    if (sc !== 'live') { stream.current?.close(); setLiveStatus('idle'); }
     const d = policyDefaults(policyDecls?.[sc === 'ai-village' ? 'ai-village' : 'mock']);
     setMaxDepth(d.maxDepth); setSemanticLimit(d.semanticLimit); setWriteLimit(d.writeLimit);
     if (sc === 'ai-village') setSpeed(10);
@@ -170,7 +173,7 @@ export default function Dashboard() {
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
   const started = useRef(false);
 
-  const input = useCallback((sc: Scenario): RunInput => ({
+  const input = useCallback((sc: Exclude<Scenario, 'live'>): RunInput => ({
     scenario: sc, feedbackEnabled: feedback, maxDepth, semanticLimit, writeLimit,
     ...(sc === 'ai-village' ? { episodeId } : {}),
   }), [feedback, maxDepth, semanticLimit, writeLimit, episodeId]);
@@ -197,9 +200,70 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [playing, total, speed]);
 
+  // Live sessions: snapshot, then server-sent events from that point on.
+  const [liveSessions, setLiveSessions] = useState<SessionSummary[]>([]);
+  const [liveId, setLiveId] = useState('');
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>('idle');
+  const stream = useRef<EventSource | null>(null);
+  const shown = useRef(0);
+
+  useEffect(() => {
+    if (scenario !== 'live') return;
+    let alive = true;
+    const load = () => listSwarmSessions().then((rows) => {
+      if (!alive) return;
+      setLiveSessions(rows);
+      setLiveId((id) => id || rows[0]?.sessionId || '');
+    }).catch(() => {});
+    load();
+    const t = setInterval(load, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [scenario]);
+
+  useEffect(() => () => stream.current?.close(), []);
+
+  const watch = async (id: string) => {
+    stream.current?.close();
+    setPlaying(false); setSelEvent(null); setFAgent(null);
+    setLiveStatus('connecting');
+    try {
+      const snap = await getSwarmSession(id);
+      setRun(snap); setCursor(snap.events.length); shown.current = snap.events.length;
+      setView({ x: 0, y: 0, k: 1 });
+      const es = new EventSource(`/api/swarm/sessions/${encodeURIComponent(id)}/stream?after=${snap.events.length}`);
+      es.onopen = () => setLiveStatus('streaming');
+      es.onmessage = (m) => {
+        const msg = JSON.parse(m.data) as SessionStreamMessage;
+        setRun((r) => (r && r.id === id ? { ...r, events: [...r.events, ...msg.events], alerts: msg.alerts, policies: msg.policies } : r));
+        // Follow the live edge unless the viewer has scrubbed back to inspect something.
+        const atEdge = shown.current;
+        setCursor((c) => (c >= atEdge ? msg.total : c));
+        shown.current = msg.total;
+      };
+      es.addEventListener('closed', () => { setLiveStatus('closed'); es.close(); });
+      // EventSource would reconnect with the original ?after= and duplicate events; stop instead.
+      es.onerror = () => { es.close(); setLiveStatus((st) => (st === 'closed' ? st : 'error')); };
+      stream.current = es;
+    } catch {
+      setLiveStatus('error');
+    }
+  };
+
+  const launchDemo = async () => {
+    try {
+      const { sessionId } = await launchInjectionDemo({ feedbackEnabled: feedback, pause: 1.2 });
+      setLiveId(sessionId);
+      await watch(sessionId);
+    } catch {
+      setLiveStatus('error');
+    }
+  };
+
   const runDemo = () => {
+    stream.current?.close(); setLiveStatus('idle');
     setPlaying(false);
     setSelEvent(null); setFAgent(null);
+    if (scenario === 'live') return;
     sim.mutate({ data: input(scenario) }, {
       onSuccess: (r) => { setRun(r); setCursor(0); setPlaying(true); setView({ x: 0, y: 0, k: 1 }); },
     });
@@ -208,6 +272,7 @@ export default function Dashboard() {
   const events = run?.events ?? [];
   const reportOnly = run?.mode === 'report-only';
   const isVillage = run?.source === 'ai-village';
+  const isLive = run?.source === 'live';
   const ticks = useMemo(() => {
     const size = Math.max(1, Math.ceil(events.length / TICK_BINS));
     const bins: { first: number; last: number; decision: string }[] = [];
@@ -297,12 +362,17 @@ export default function Dashboard() {
         </div>
         {isVillage
           ? <><Badge color={C.info}>AI Village dataset replay</Badge><Badge color={C.warn}>report-only · counterfactual</Badge></>
-          : <Badge color={C.warn}>Synthetic sample data</Badge>}
+          : isLive
+            ? <><Badge color={LIVE}>live session · enforce</Badge>
+                <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider" style={{ ...mono, color: liveStatus === 'streaming' ? C.ok : liveStatus === 'error' ? C.bad : C.dim }} data-testid="status-live">
+                  <span className={`h-2 w-2 rounded-full ${liveStatus === 'streaming' ? 'animate-pulse' : ''}`} style={{ background: 'currentColor' }} />{liveStatus}
+                </span></>
+            : <Badge color={C.warn}>Synthetic sample data</Badge>}
         {run && <span className="text-xs text-muted-foreground hidden md:inline" style={mono} data-testid="text-run-id">{run.id} / {run.provenance}</span>}
         <div className="flex-1" />
         <div className="flex items-center border border-border" role="tablist">
           {SCENARIOS.map(([s, label]) => {
-            const col = s === 'attack' ? C.bad : s === 'injection' ? C.warn : s === 'ai-village' ? C.info : C.ok;
+            const col = s === 'attack' ? C.bad : s === 'injection' ? C.warn : s === 'ai-village' ? C.info : s === 'live' ? LIVE : C.ok;
             const off = s === 'ai-village' && !village?.available;
             return (
               <button key={s} data-testid={`button-scenario-${s}`} onClick={() => chooseScenario(s)} disabled={off}
@@ -320,9 +390,25 @@ export default function Dashboard() {
             {village.episodes.map((e) => <option key={e.id} value={e.id}>{episodeLabel(e)}</option>)}
           </select>
         )}
-        <Btn primary testid="button-run-demo" onClick={runDemo} disabled={sim.isPending}>
-          <FlaskConical size={14} /> {sim.isPending ? (scenario === 'ai-village' ? 'Replaying…' : 'Simulating…') : scenario === 'ai-village' ? 'Replay' : 'Run Demo'}
-        </Btn>
+        {scenario === 'live' ? (
+          <>
+            <select className="h-8 max-w-[18rem] bg-secondary border border-border text-xs px-1.5 text-foreground" value={liveId}
+              onChange={(e) => setLiveId(e.target.value)} data-testid="select-session" aria-label="Live session">
+              {liveSessions.length === 0 && <option value="">no live sessions</option>}
+              {liveSessions.map((r) => (
+                <option key={r.sessionId} value={r.sessionId}>
+                  {(r.label || r.sessionId.slice(0, 8))} · {tm(r.created)} · {r.events} events · {r.alerts} alerts
+                </option>
+              ))}
+            </select>
+            <Btn testid="button-watch" onClick={() => liveId && watch(liveId)} disabled={!liveId}>Watch</Btn>
+            <Btn primary testid="button-launch-demo" onClick={launchDemo}><FlaskConical size={14} /> Launch attack demo</Btn>
+          </>
+        ) : (
+          <Btn primary testid="button-run-demo" onClick={runDemo} disabled={sim.isPending}>
+            <FlaskConical size={14} /> {sim.isPending ? (scenario === 'ai-village' ? 'Replaying…' : 'Simulating…') : scenario === 'ai-village' ? 'Replay' : 'Run Demo'}
+          </Btn>
+        )}
       </header>
 
       {sim.isError && (
@@ -468,7 +554,8 @@ export default function Dashboard() {
                 </select>
                 {fAgent && <button className="text-xs px-2 h-7 border" style={{ borderColor: C.info, color: C.info }} data-testid="button-clear-agent" onClick={() => setFAgent(null)}>{fAgent} x</button>}
               </div>
-              <div className="flex-1 overflow-y-auto min-h-[180px]" data-testid="list-feed">
+              {/* Newest rows are inserted at the top; scroll anchoring would push them out of view. */}
+              <div className="flex-1 overflow-y-auto min-h-[180px]" style={{ overflowAnchor: 'none' }} data-testid="list-feed">
                 {feed.length === 0 && (
                   <div className="p-8 text-center text-xs text-muted-foreground" data-testid="status-feed-empty">
                     {total === 0 ? 'No events recorded yet.' : cursor === 0 ? 'Recorder armed. Press play to replay events.' : 'No events match these filters.'}
@@ -586,6 +673,9 @@ export default function Dashboard() {
                     <li>Agent narration is the agent's own claim, not verified ground truth. Check screenshots in the dataset before relying on it.</li>
                     <li>GUI micro-actions (clicks, scrolls, screenshots) are aggregated, not replayed. Shared-state writes are inferred from shell commands only.</li>
                     <li>Human messages are anonymized into one actor with text withheld. Behaviour before and after 2026-03-24 reflects different scaffolding regimes.</li>
+                  </> : isLive ? <>
+                    <li>Live session: every decision was made before the agent ran the action. Blocked calls never reached the tool.</li>
+                    <li>Enforcement is cooperative: it holds for agents that call tools through the SwarmSentinel guard. An agent that skips the guard is not stopped.</li>
                   </> : <li>All data here is synthetic and generated for demonstration. Nothing depicts a real incident.</li>}
                   <li>Intent fingerprints are hashes, not semantic embeddings. Throttling matches identical normalized intents; the gateway is not an isolated tamper-proof process.</li>
                   <li>Out-of-band monitoring observes and alerts. It cannot undo edits that already happened.</li>
@@ -639,11 +729,11 @@ export default function Dashboard() {
           <span className="text-xs text-muted-foreground ml-1" style={mono} data-testid="text-cursor">{cursor}/{total} events{visible.length ? ` / ${tm(visible[visible.length - 1].timestamp)}` : ''}</span>
           <div className="flex-1" />
           <Btn testid="button-download-json" disabled={!complete} title={complete ? '' : 'Available when the run is fully replayed'}
-            onClick={() => run && download(`${run.id}-traces.json`, JSON.stringify(run, null, 2), 'application/json')}>
+            onClick={async () => { const r = run && (isLive ? await getSwarmSession(run.id) : run); if (r) download(`${r.id}-traces.json`, JSON.stringify(r, null, 2), 'application/json'); }}>
             <FileJson size={14} /> Traces (.json)
           </Btn>
           <Btn primary testid="button-download-report" disabled={!complete} title={complete ? '' : 'Available when the run is fully replayed'}
-            onClick={() => run && download(`${run.id}-report.md`, run.report, 'text/markdown')}>
+            onClick={async () => { const r = run && (isLive ? await getSwarmSession(run.id) : run); if (r) download(`${r.id}-report.md`, r.report, 'text/markdown'); }}>
             <Download size={14} /> Download Report (.md)
           </Btn>
         </div>

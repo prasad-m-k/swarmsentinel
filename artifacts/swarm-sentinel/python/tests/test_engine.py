@@ -207,6 +207,36 @@ class LiveInterception(unittest.TestCase):
         with self.assertRaises(HTTPException):
             session_run(sid)
 
+    def test_session_list_and_stream(self):
+        import asyncio, json as _json
+        from live import CallInput, SessionInput
+        from server import create_session, delete_session, evaluate, list_sessions, stream_session
+        sid = create_session(SessionInput())["sessionId"]
+        for i in range(3):
+            evaluate(sid, CallInput(agentId="orchestrator", action="tool", target="mock:search.read", intent=f"q{i}", spanId="s1"))
+        self.assertEqual(next(r for r in list_sessions() if r["sessionId"] == sid)["events"], 3)
+
+        async def first_frame():
+            body = (await stream_session(sid, after=1)).body_iterator
+            return await body.__anext__()
+        frame = asyncio.run(first_frame())
+        message = _json.loads(frame.removeprefix("data: ").strip())
+        self.assertEqual((message["total"], [e["intent"] for e in message["events"]]), (3, ["q1", "q2"]))
+        delete_session(sid)
+
+    def test_demo_endpoint_runs_attack_without_moving_money(self):
+        import time
+        from server import DemoInput, SESSIONS, launch_injection_demo
+        sid = launch_injection_demo(DemoInput(pause=0))["sessionId"]
+        session = SESSIONS.get(sid)
+        for _ in range(100):
+            if len(session.gateway.telemetry) >= 12:
+                break
+            time.sleep(0.02)
+        transfers = [t for t in session.gateway.telemetry if t.target == "mock:payments.transfer"]
+        self.assertEqual([t.executed for t in transfers], [False, False])
+        self.assertEqual([a["kind"] for a in session.sentinel.alerts], ["injection_spread"])
+
     def test_store_is_bounded(self):
         from live import SessionInput, SessionStore
         store = SessionStore(limit=3)
