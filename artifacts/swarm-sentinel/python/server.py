@@ -1,8 +1,12 @@
+import asyncio
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from asp_policy import ASPPolicy
 from live import CallInput, SessionInput, SessionStore
 from models import RunInput
@@ -102,6 +106,19 @@ def _session(session_id):
     return session
 
 
+@app.get("/api/swarm/sessions")
+def list_sessions():
+    """Live sessions, newest first, so the dashboard can attach to one."""
+    rows = []
+    with SESSIONS.lock:
+        sessions = list(SESSIONS.sessions.values())
+    for s in sessions:
+        with s.lock:
+            rows.append(dict(sessionId=s.id, created=s.created, policyName=s.spec.policy, root=s.spec.root,
+                             label=s.label, events=len(s.gateway.telemetry), alerts=len(s.sentinel.alerts)))
+    return sorted(rows, key=lambda r: r["created"], reverse=True)
+
+
 @app.post("/api/swarm/sessions", status_code=201)
 def create_session(spec: SessionInput):
     session = SESSIONS.create(spec)
@@ -121,6 +138,49 @@ def session_run(session_id: str):
     with s.lock:
         started = s.gateway.telemetry[0].timestamp if s.gateway.telemetry else s.created
         return _run(s.id, "live", "live", LIVE, s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started)
+
+
+@app.get("/api/swarm/sessions/{session_id}/stream")
+async def stream_session(session_id: str, after: int = 0):
+    """Server-sent events: each message carries traces after `after`, plus current alerts and revocations."""
+    _session(session_id)
+
+    async def events():
+        sent, idle = max(0, after), 0
+        while (s := SESSIONS.get(session_id)) is not None:
+            with s.lock:
+                fresh = [t.model_dump() for t in s.gateway.telemetry[sent:]]
+                alerts, policies = list(s.sentinel.alerts), list(s.sentinel.policy_changes)
+            if fresh:
+                sent += len(fresh)
+                idle = 0
+                yield f"data: {json.dumps({'events': fresh, 'alerts': alerts, 'policies': policies, 'total': sent})}\n\n"
+            else:
+                idle += 1
+                if idle % 60 == 0:
+                    yield ": keep-alive\n\n"
+            await asyncio.sleep(0.25)
+        yield "event: closed\ndata: {}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class DemoInput(BaseModel):
+    feedbackEnabled: bool = True
+    pause: float = Field(default=1.2, ge=0, le=5)
+
+
+@app.post("/api/swarm/demo/injection", status_code=202)
+def launch_injection_demo(spec: DemoInput):
+    """Start the poisoned-invoice attack against a fresh live session, paced for watching."""
+    from demo import run_injection
+    from sdk.guard import Guard, _Local
+    session = SESSIONS.create(SessionInput(feedbackEnabled=spec.feedbackEnabled))
+    session.label = "Prompt-injection demo"
+    guard = Guard(_Local(SESSIONS), session_id=session.id)
+    threading.Thread(target=run_injection, args=(guard, spec.pause), daemon=True).start()
+    return {"sessionId": session.id}
 
 
 @app.delete("/api/swarm/sessions/{session_id}", status_code=204)

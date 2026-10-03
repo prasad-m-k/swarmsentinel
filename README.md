@@ -49,6 +49,7 @@ The goal is **containment with evidence**, rather than assuming that an agent's 
 - **Policy feedback:** revoke implicated agents and block, or in report-only mode flag as would-block, their subsequent in-band calls and those of their descendants.
 - **Episode index:** a full scan ranks windows where tripwires cluster, so you can see where swarm-like coordination appeared over 17 months of village history.
 - **Flight recorder:** distinguish `allow`, `throttle`, `drop` and out-of-band `observed` events, with structured violation records, policy versions, execution status, and a `sourceRef` back to the dataset row.
+- **Live dashboard mode:** watch any live session as decisions stream in, or launch the injection attack from the browser. The timeline follows the live edge unless you scrub back to inspect.
 - **Interactive dashboard:** directed agent/resource graph, event details, enforcement feed, tripwire history, policy controls, replay speed, and timeline.
 - **Exports:** download a Markdown incident report or a provenance-aware JSON run record after replay completes.
 - **Presentation:** eight slides covering the problem, approach, design, architecture and prototype boundaries.
@@ -106,7 +107,8 @@ The AI Village replay is the first test of this against real heterogeneous agent
 5. Change policy limits or the feedback setting, then run the scenario again for comparison.
 6. After replay completes, download the JSON traces and Markdown report.
 7. Select **Prompt Injection** and **Run Demo**. Step through it: the parser's own payment call is out of scope, its attempt to spawn a payment helper is refused, the ledger agent (which does hold payment rights) is blocked because it received tainted instructions, and the tripwire revokes all three while the orchestrator keeps working. Turn feedback off and rerun to see the taint rule alone stop the notifier's write.
-8. Locally, with an AI Village store built: select **AI Village**, choose an episode (ranked by tripwire activity), set speed to 10x or 50x, and **Replay**. The **Limits & data** tab summarizes what the policy would have blocked.
+8. Select **Live**, then **Launch attack demo**. The same attack runs against a real live session at watchable pace, and each decision streams into the dashboard as the gateway makes it. Any session started by an agent using the guard (for example `python examples/live_injection_demo.py --remote http://127.0.0.1:8000 --pause 1.5`) appears in the session list and can be watched the same way.
+9. Locally, with an AI Village store built: select **AI Village**, choose an episode (ranked by tripwire activity), set speed to 10x or 50x, and **Replay**. The **Limits & data** tab summarizes what the policy would have blocked.
 
 Runs are ephemeral. Export a run before replacing it with another simulation.
 
@@ -204,7 +206,7 @@ python examples/live_injection_demo.py --remote http://127.0.0.1:8000
 python examples/bench_latency.py                                 # p50/p95/p99, in-process and HTTP
 ```
 
-Session endpoints: `POST /api/swarm/sessions`, `POST /api/swarm/sessions/{id}/evaluate`, `GET /api/swarm/sessions/{id}` (a run record the dashboard and reporter understand), `DELETE /api/swarm/sessions/{id}`. Sessions are in memory and capped at 200. Interception is cooperative: an agent that skips the guard is not stopped (see the [threat model](docs/THREAT_MODEL.md), gap G1).
+Session endpoints: `GET`/`POST /api/swarm/sessions` (list, create), `POST /api/swarm/sessions/{id}/evaluate`, `GET /api/swarm/sessions/{id}` (a run record the dashboard and reporter understand), `GET /api/swarm/sessions/{id}/stream?after=N` (server-sent events carrying each new decision with current alerts and revocations), `DELETE /api/swarm/sessions/{id}`, and `POST /api/swarm/demo/injection` (runs the attack against a fresh session, paced for watching). Sessions are in memory and capped at 200. Interception is cooperative: an agent that skips the guard is not stopped (see the [threat model](docs/THREAT_MODEL.md), gap G1).
 
 ### 5. Real data (AI Village)
 

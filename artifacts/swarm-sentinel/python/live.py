@@ -58,6 +58,7 @@ class LiveSession:
         self.lock = threading.Lock()
         self.created = datetime.now(timezone.utc).isoformat()
         self.timings_ms = deque(maxlen=10_000)
+        self.label = ""
 
     def evaluate(self, call: CallInput):
         with self.lock:

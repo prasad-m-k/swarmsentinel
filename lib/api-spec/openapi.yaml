@@ -42,6 +42,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/SwarmSources"
   /swarm/sessions:
+    get:
+      operationId: listSwarmSessions
+      tags: [swarm]
+      summary: Live sessions, newest first
+      responses:
+        "200":
+          description: Session summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SessionSummary" }
     post:
       operationId: createSwarmSession
       tags: [swarm]
@@ -57,6 +69,41 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionCreated" }
+  /swarm/sessions/{sessionId}/stream:
+    get:
+      operationId: streamSwarmSession
+      tags: [swarm]
+      summary: "Server-sent events: traces after `after`, with current alerts and revocations"
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, required: false, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: "text/event-stream; each data line is a SessionStreamMessage"
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "404": { description: Unknown or expired session }
+  /swarm/demo/injection:
+    post:
+      operationId: launchInjectionDemo
+      tags: [swarm]
+      summary: Start the poisoned-invoice attack against a fresh live session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DemoInput" }
+      responses:
+        "202":
+          description: Demo started
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId]
+                properties:
+                  sessionId: { type: string }
   /swarm/sessions/{sessionId}/evaluate:
     post:
       operationId: evaluateSwarmCall
@@ -286,6 +333,30 @@ components:
         policy: { type: string, enum: [mock, ai-village], default: mock }
         feedbackEnabled: { type: boolean, default: true }
         root: { type: string, default: orchestrator }
+    SessionSummary:
+      type: object
+      required: [sessionId, created, policyName, root, label, events, alerts]
+      properties:
+        sessionId: { type: string }
+        created: { type: string }
+        policyName: { type: string }
+        root: { type: string }
+        label: { type: string }
+        events: { type: integer }
+        alerts: { type: integer }
+    SessionStreamMessage:
+      type: object
+      required: [events, alerts, policies, total]
+      properties:
+        events: { type: array, items: { $ref: "#/components/schemas/Trace" } }
+        alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
+        policies: { type: array, items: { $ref: "#/components/schemas/PolicyChange" } }
+        total: { type: integer }
+    DemoInput:
+      type: object
+      properties:
+        feedbackEnabled: { type: boolean, default: true }
+        pause: { type: number, minimum: 0, maximum: 5, default: 1.2 }
     SessionCreated:
       type: object
       required: [sessionId, policyName, root, feedbackEnabled, policy]
