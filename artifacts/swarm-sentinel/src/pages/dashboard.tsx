@@ -6,10 +6,10 @@ import {
   Plus, Minus, Maximize2, FileJson, FlaskConical, Radar,
 } from 'lucide-react';
 
-type Scenario = 'normal' | 'attack' | 'ai-village';
+type Scenario = 'normal' | 'attack' | 'injection' | 'ai-village';
 type PolicyDecl = { delegation: { 'max-depth': number }; swarm: { 'write-cap': number; 'repeated-intent': { limit: number } } };
 
-const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['ai-village', 'AI Village']];
+const SCENARIOS: [Scenario, string][] = [['normal', 'Normal Run'], ['attack', 'Swarm Attack'], ['injection', 'Prompt Injection'], ['ai-village', 'AI Village']];
 const SPEEDS = [1, 10, 50];
 const TICK_BINS = 320;
 const FEED_LIMIT = 400;
@@ -220,6 +220,12 @@ export default function Dashboard() {
   const visible = useMemo(() => events.slice(0, cursor), [events, cursor]);
   const visIds = useMemo(() => new Set(visible.map((e) => e.id)), [visible]);
   const layout = useMemo(() => buildLayout(events), [events]);
+  // Spawn targets the gateway refused never existed; draw them as greyed placeholders.
+  const neverAdmitted = useMemo(() => {
+    const refused = new Set(events.filter((e) => e.action === 'spawn' && !e.executed).map((e) => e.target));
+    events.forEach((e) => { if (e.action === 'spawn' && e.executed) refused.delete(e.target); refused.delete(e.agentId); });
+    return refused;
+  }, [events]);
   const lastT = visible.length ? new Date(visible[visible.length - 1].timestamp).getTime() : -Infinity;
   const alerts = useMemo(() => (run?.alerts ?? []).filter((a) => visIds.has(a.eventId)), [run, visIds]);
   const policies = useMemo(() => (run?.policies ?? []).filter((p) => new Date(p.timestamp).getTime() <= lastT), [run, lastT]);
@@ -296,7 +302,7 @@ export default function Dashboard() {
         <div className="flex-1" />
         <div className="flex items-center border border-border" role="tablist">
           {SCENARIOS.map(([s, label]) => {
-            const col = s === 'attack' ? C.bad : s === 'ai-village' ? C.info : C.ok;
+            const col = s === 'attack' ? C.bad : s === 'injection' ? C.warn : s === 'ai-village' ? C.info : C.ok;
             const off = s === 'ai-village' && !village?.available;
             return (
               <button key={s} data-testid={`button-scenario-${s}`} onClick={() => chooseScenario(s)} disabled={off}
@@ -402,7 +408,7 @@ export default function Dashboard() {
               {[...graph.nodeIds].map((id) => {
                 const n = layout.get(id)!;
                 const bad = detected.has(id);
-                const col = n.kind === 'tool' ? C.tool : bad ? C.bad : C.ok;
+                const col = n.kind === 'tool' ? C.tool : neverAdmitted.has(id) ? C.dim : bad ? C.bad : C.ok;
                 const isSel = fAgent === id || highlightNodes.has(id);
                 return (
                   <g key={id} transform={`translate(${n.x} ${n.y})`} className="cursor-pointer" data-testid={`node-${id}`}
@@ -424,7 +430,7 @@ export default function Dashboard() {
           </svg>
           {focus && (
             <div className="absolute bottom-10 right-3 z-10 bg-card border border-border px-2.5 py-1.5 text-xs" style={mono} data-testid="text-node-info">
-              {focus}: {detected.has(focus) ? 'detected' : 'no detection'} / {visible.filter((e) => e.agentId === focus).length} actions
+              {focus}: {neverAdmitted.has(focus) ? 'spawn refused, never admitted' : `${detected.has(focus) ? 'detected' : 'no detection'} / ${visible.filter((e) => e.agentId === focus).length} actions`}
             </div>
           )}
         </section>
@@ -483,6 +489,7 @@ export default function Dashboard() {
                       <Badge color={decColor(e.decision)}>{decLabel(e.decision, reportOnly)}</Badge>
                       {!e.executed && <span className="text-[9px] uppercase" style={{ ...mono, color: C.bad }}>not executed</span>}
                       {e.executed && e.mode === 'report-only' && (e.decision === 'drop' || e.decision === 'throttle') && <span className="text-[9px] uppercase" style={{ ...mono, color: C.warn }}>happened</span>}
+                      {e.taintOrigin && !isVillage && <span className="text-[9px] uppercase" style={{ ...mono, color: C.warn }} title={`Contaminated by untrusted content from ${e.taintOrigin}`}>tainted</span>}
                     </span>
                   </button>
                 ))}
@@ -503,7 +510,8 @@ export default function Dashboard() {
                     ...(selected.network ? [['network', selected.network]] : []),
                     ...(selected.reads ? [['reads', `${selected.reads} content`]] : []),
                     ...(selected.write ? [['writes', selected.resource || 'local / private state']] : []),
-                    ...(selected.contaminated ? [['context', 'contaminated: this span read untrusted content earlier']] : []),
+                    ...(selected.contaminated ? [['context', selected.taintOrigin ? `contaminated by untrusted content from ${selected.taintOrigin}` : 'contaminated: this span read untrusted content earlier']] : []),
+                    ...(selected.scope?.length ? [['delegated scope', selected.scope.join(', ')]] : []),
                     ...(selected.mentions?.length ? [['mentions', selected.mentions.join(', ')]] : []),
                   ] as [string, string][]).map(([k, v]) => (
                     <div key={k} className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">{k}</span><span className="break-all" style={mono}>{v}</span></div>

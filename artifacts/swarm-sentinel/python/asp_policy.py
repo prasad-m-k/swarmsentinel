@@ -37,6 +37,10 @@ class ContentTrust(_Strict):
     tool_response: str = Field(default="low", alias="tool-response")
     retrieved_document: str = Field(default="untrusted", alias="retrieved-document")
     contaminated_write: Literal["report", "deny"] = Field(default="report", alias="contaminated-write")
+    # Paper section III.B: contamination reduces capability. These tools are refused outright once tainted.
+    contaminated_deny: list[str] = Field(default=[], alias="contaminated-deny")
+    # Biba no-read-down across agents: receiving a message from a tainted context taints the recipient.
+    propagate: bool = Field(default=False, alias="propagate-via-messages")
 
 
 class Delegation(_Strict):
@@ -61,6 +65,7 @@ class Tripwires(_Strict):
     consensus_density: float = Field(default=.5, alias="consensus-density")
     echo_agents: int = Field(default=0, alias="echo-agents", description="0 disables the echo detector")
     echo_similarity: float = Field(default=.6, alias="echo-similarity")
+    taint_agents: int = Field(default=0, alias="taint-agents", description="0 disables the injection-spread detector")
 
 
 class Swarm(_Strict):

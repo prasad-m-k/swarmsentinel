@@ -60,7 +60,7 @@ components:
       type: object
       required: [scenario, feedbackEnabled]
       properties:
-        scenario: { type: string, enum: [normal, attack, ai-village] }
+        scenario: { type: string, enum: [normal, attack, injection, ai-village] }
         feedbackEnabled: { type: boolean }
         maxDepth: { type: integer, minimum: 1, maximum: 10, description: Defaults to the scenario policy }
         semanticLimit: { type: integer, minimum: 2, maximum: 20, description: Defaults to the scenario policy }
@@ -101,6 +101,8 @@ components:
         mode: { type: string, enum: [enforce, report-only] }
         violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
         contaminated: { type: boolean }
+        taintOrigin: { type: string, description: Event id of the untrusted read this context descends from; empty if clean }
+        scope: { type: array, items: { type: string }, description: "Spawn only: tool patterns delegated to the child" }
     Violation:
       type: object
       required: [directive, attempted_action, enforced]

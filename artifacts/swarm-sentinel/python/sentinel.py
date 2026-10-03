@@ -103,6 +103,10 @@ class Sentinel:
         if trace.action == "message":
             candidates.extend(self._consensus(now, trace))
             candidates.extend(self._echo(now, trace))
+        if self.limits.taint_agents and trace.taintOrigin:
+            reached = sorted(gateway.taint_groups[trace.taintOrigin])
+            if len(reached) >= self.limits.taint_agents:
+                candidates.append(("injection_spread", f"Untrusted content from event {trace.taintOrigin} has reached {len(reached)} agents through messages", reached, trace.taintOrigin))
         for kind, reason, agents, scope in candidates:
             key = (kind, scope)
             if key in self.detected or self._overlaps_recent(kind, agents, now):

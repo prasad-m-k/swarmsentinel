@@ -1,13 +1,13 @@
 {
   "asp-version": "1.0",
-  "description": "Policy for the synthetic normal/attack scenarios. Mock tools only.",
+  "description": "Policy for the synthetic normal, attack and injection scenarios. Mock tools only.",
   "network": {
     "default": "deny",
     "allow": []
   },
   "tools": {
     "default": "deny",
-    "allow": ["mock:search.read", "mock:mcp:wiki.write", "mock:mcp:board.write"],
+    "allow": ["mock:search.read", "mock:mcp:wiki.write", "mock:mcp:board.write", "mock:fs.read", "mock:ledger.read", "mock:payments.transfer"],
     "deny": [],
     "deny-arguments": []
   },
@@ -16,7 +16,9 @@
     "user-input": "medium",
     "tool-response": "low",
     "retrieved-document": "untrusted",
-    "contaminated-write": "report"
+    "contaminated-write": "deny",
+    "contaminated-deny": ["mock:payments.*"],
+    "propagate-via-messages": true
   },
   "delegation": {
     "sub-agents": "inherit-and-restrict",
@@ -35,7 +37,8 @@
       "consensus-min-cluster": 3,
       "consensus-density": 0.5,
       "echo-agents": 0,
-      "echo-similarity": 0.6
+      "echo-similarity": 0.6,
+      "taint-agents": 3
     }
   }
 }

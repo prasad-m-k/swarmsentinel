@@ -32,7 +32,9 @@
     "user-input": "medium",
     "tool-response": "low",
     "retrieved-document": "untrusted",
-    "contaminated-write": "report"
+    "contaminated-write": "report",
+    "contaminated-deny": [],
+    "propagate-via-messages": false
   },
   "delegation": {
     "sub-agents": "inherit-and-restrict",
@@ -51,7 +53,8 @@
       "consensus-min-cluster": 4,
       "consensus-density": 0.6,
       "echo-agents": 4,
-      "echo-similarity": 0.6
+      "echo-similarity": 0.6,
+      "taint-agents": 0
     }
   }
 }

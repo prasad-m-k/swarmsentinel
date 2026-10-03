@@ -6,6 +6,8 @@ from models import Trace, Violation
 DIRECTIVES = {
     "tools.deny": "tools.deny", "tools.default_deny": "tools.allow", "tools.deny_arguments": "tools.deny-arguments",
     "network.default_deny": "network.allow", "trust.contaminated_write": "content-trust",
+    "trust.contaminated_tool": "content-trust.contaminated-deny",
+    "delegation.out_of_scope": "delegation.sub-agents", "delegation.scope_expansion": "delegation.sub-agents",
     "tools.write_cap": "swarm.write-cap", "semantic.identical_intent": "swarm.repeated-intent",
     "lineage.unknown": "delegation", "lineage.invalid": "delegation", "lineage.max_depth": "delegation.max-depth",
     "lineage.duplicate": "delegation", "tripwire.revoked": "swarm.tripwires",
@@ -32,7 +34,13 @@ class ASPGateway:
         self.version = 1
         self.writes = defaultdict(list)
         self.intents = defaultdict(list)
-        self.contaminated = set()
+        # Biba-style taint: span -> origin event id, agent -> origin event id (via messages),
+        # and origin event id -> every agent that origin has reached.
+        self.contaminated = {}
+        self.tainted = {}
+        self.taint_groups = defaultdict(set)
+        # Inherit-and-restrict delegation: agent -> tool patterns granted at spawn.
+        self.scopes = {}
         self.telemetry = []
 
     @property
@@ -49,6 +57,16 @@ class ASPGateway:
                 return True
             agent = self.agents.get(agent, ("", 0, ""))[0]
         return False
+
+    def taint_origin(self, event):
+        """Event id of the untrusted read this context descends from, or "" if clean."""
+        return self.contaminated.get(event.spanId) or self.tainted.get(event.agentId, "")
+
+    def _scope_chain(self, agent):
+        while agent:
+            if agent in self.scopes:
+                yield agent, self.scopes[agent]
+            agent = self.agents.get(agent, ("", 0, ""))[0]
 
     def _rate_checks(self, event, now, key, is_write, write_key):
         window, cap = self.window, self.policy.swarm.write_cap
@@ -71,17 +89,25 @@ class ASPGateway:
             return "drop", "tools.deny", "Tool is on the explicit deny list"
         if tools.default == "deny" and not tool_matches(event.target, tools.allow):
             return "drop", "tools.default_deny", "Tool is outside the explicit allowlist"
+        for holder, scope in self._scope_chain(event.agentId):
+            if not tool_matches(event.target, scope):
+                whose = "its delegated scope" if holder == event.agentId else f"the scope delegated to ancestor {holder}"
+                return "drop", "delegation.out_of_scope", f"Tool is outside {whose} ({', '.join(scope)})"
         label = argument_violation(event.target, event.detail, tools.deny_arguments)
         if label:
             return "drop", "tools.deny_arguments", f"Argument constraint: {label}"
         if not host_allowed(event.network, network):
             return "drop", "network.default_deny", f"Network destination {event.network} is outside the allowlist"
         is_write = event.write if event.write is not None else event.target.endswith(".write")
-        if is_write and event.spanId in self.contaminated:
-            if self.policy.content_trust.contaminated_write == "deny":
-                return "drop", "trust.contaminated_write", "Write from a context that read untrusted content"
+        origin = self.taint_origin(event)
+        trust = self.policy.content_trust
+        if origin and tool_matches(event.target, trust.contaminated_deny):
+            return "drop", "trust.contaminated_tool", f"Capability withdrawn: context is contaminated by untrusted content (origin {origin})"
+        if is_write and origin:
+            if trust.contaminated_write == "deny":
+                return "drop", "trust.contaminated_write", f"Write from a context contaminated by untrusted content (origin {origin})"
             advisories.append(Violation(directive="content-trust", attempted_action=event.target,
-                                        detail="write after reading untrusted content in this span", enforced=False))
+                                        detail=f"write from a context contaminated by untrusted content (origin {origin})", enforced=False))
         key = (" ".join(event.intent.lower().split()), event.target)
         return self._rate_checks(event, now, key, is_write, event.resource or event.target)
 
@@ -104,6 +130,8 @@ class ASPGateway:
             decision, rule, reason = "drop", "tripwire.revoked", "Sentinel revoked this actor or an ancestor; downstream call not executed"
         elif event.action == "spawn" and event.target in self.agents:
             decision, rule, reason = "drop", "lineage.duplicate", "Agent ID already registered"
+        elif event.action == "spawn" and (wider := [p for p in event.scope for _, scope in self._scope_chain(event.agentId) if not tool_matches(p, scope)]):
+            decision, rule, reason = "drop", "delegation.scope_expansion", f"Sub-agent scope would exceed the delegator's: {', '.join(sorted(set(wider)))}"
         elif event.action == "tool":
             decision, rule, reason = self._tool_checks(event, now, advisories) or (decision, rule, reason)
         elif event.action == "message" and "message" in self.policy.swarm.repeated_intent.actions:
@@ -111,9 +139,18 @@ class ASPGateway:
             decision, rule, reason = self._rate_checks(event, now, key, False, "") or (decision, rule, reason)
         if event.action == "spawn" and decision == "allow":
             self.agents[event.target] = (event.agentId, proposed_depth, event.spanId)
+            if event.scope:
+                self.scopes[event.target] = list(event.scope)
         executed = self.mode == "report-only" or decision in {"allow", "observed"}
-        if executed and event.reads == "untrusted":
-            self.contaminated.add(event.spanId)
+        if executed and event.reads == "untrusted" and not self.taint_origin(event):
+            self.contaminated[event.spanId] = event.id
+            self.taint_groups[event.id].add(event.agentId)
+        origin = self.taint_origin(event)
+        if executed and origin and event.action == "message" and event.channel == "in_band" and self.policy.content_trust.propagate:
+            for recipient in event.mentions or [event.target]:
+                if recipient in self.agents and recipient not in self.protected and recipient not in self.tainted:
+                    self.tainted[recipient] = origin
+                    self.taint_groups[origin].add(recipient)
         violations = advisories
         if decision in {"drop", "throttle"}:
             violations = [Violation(directive=DIRECTIVES.get(rule, rule), attempted_action=event.target,
@@ -126,7 +163,7 @@ class ASPGateway:
             "parentSpanId": parent_span if known else event.parentSpanId,
             "decision": decision, "rule": rule, "reason": reason,
             "executed": executed, "policyVersion": self.version, "mode": self.mode,
-            "violations": violations, "contaminated": event.spanId in self.contaminated,
+            "violations": violations, "contaminated": bool(origin), "taintOrigin": origin,
         })
         self.telemetry.append(trace)
         return trace

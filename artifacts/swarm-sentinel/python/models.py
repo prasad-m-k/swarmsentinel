@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class RunInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scenario: Literal["normal", "attack", "ai-village"]
+    scenario: Literal["normal", "attack", "injection", "ai-village"]
     feedbackEnabled: bool = True
     # Omitted limits fall back to the scenario's ASP policy declaration.
     maxDepth: Optional[int] = Field(default=None, ge=1, le=10)
@@ -45,6 +45,8 @@ class Event(BaseModel):
     write: Optional[bool] = None
     resource: str = ""
     mentions: list[str] = []
+    # Spawn only: tool patterns delegated to the child (inherit-and-restrict). Empty = inherit.
+    scope: list[str] = []
 
 
 class Violation(BaseModel):
@@ -63,3 +65,4 @@ class Trace(Event):
     mode: Literal["enforce", "report-only"] = "enforce"
     violations: list[Violation] = []
     contaminated: bool = False
+    taintOrigin: str = ""
