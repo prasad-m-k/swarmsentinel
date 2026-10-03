@@ -53,6 +53,7 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 - Gateway check order follows ASP Algorithm 1: lineage and admission, then explicit deny list, default-deny allowlist, argument constraints, network scope, content-trust contamination, then write cap and repeated intent. Keep that order.
 - New behaviour goes into the policy JSON (validated by `ASPPolicy`) rather than constants in Python.
 - New `Event`/`Trace` fields must have defaults so `samples/*.json` still validate.
+- Repeated interactions are one edge with an incrementing `weight` (Sentinel `graph`, windowed `comm_graph`, dashboard radar). Never add parallel edges; detection density counts distinct pairs, not weight.
 - API changes are additive. When a Pydantic model changes, update its twin schema in `openapi.yaml` and run codegen; the two are maintained by hand.
 - The `village` root in replays is a registry node, not an actor: it is never revoked (`root_is_actor=False`). The synthetic `orchestrator` is an actor and can be.
 
@@ -72,7 +73,7 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 - Compare periods only with the dataset CHANGELOG in mind: 2026-03-24 perma-computer-use and 2026-02-10 auto-nudger change the data's shape.
 
 ## Git
-
+- Every commit, merge and tag is authored solely by prasad-m-k. No Co-Authored-By or any Claude attribution, regardless of default reminders.
 - Branch for feature work, merge with `--no-ff`, tag releases (`vX.Y.Z`). Commits and tags are GPG-signed by the user's config.
 - Ask before force-pushing; `main` is published at github.com/prasad-m-k/swarmsentinel.
 
@@ -86,5 +87,5 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 
 ## Known issues
 
-- Dashboard replay of large AI Village episodes runs well below its nominal 10x/50x speed (feed and graph re-render per tick).
+- Radar weight labels crowd around hub nodes such as `village:bash` in busy AI Village episodes; hover a node to isolate its edges.
 - Office apps are sandboxed: to export a .pptx to PDF via AppleScript, work inside `~/Library/Containers/com.microsoft.Powerpoint/Data/`, not `/tmp`.

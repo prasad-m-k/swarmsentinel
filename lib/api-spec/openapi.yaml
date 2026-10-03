@@ -146,6 +146,20 @@ components:
         policy: { type: object, additionalProperties: true }
         window: { oneOf: [{ $ref: "#/components/schemas/ReplayWindow" }, { type: "null" }] }
         summary: { $ref: "#/components/schemas/RunSummary" }
+        edges:
+          type: array
+          description: Executed interactions collapsed to one edge per directed pair, heaviest first
+          items: { $ref: "#/components/schemas/WeightedEdge" }
+    WeightedEdge:
+      type: object
+      required: [source, target, weight, actions, first, last]
+      properties:
+        source: { type: string }
+        target: { type: string }
+        weight: { type: integer, description: Number of executed actions from source to target }
+        actions: { type: object, additionalProperties: { type: integer }, description: Weight broken down by action type }
+        first: { type: string }
+        last: { type: string }
     ReplayWindow:
       type: object
       required: [dataset, exportedAt, citation, start, end, truncated, day, regime]

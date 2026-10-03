@@ -120,6 +120,34 @@ class Detectors(unittest.TestCase):
         self.assertIn("rapid_consensus", [a["kind"] for a in sentinel.alerts])
 
 
+class WeightedGraph(unittest.TestCase):
+    def test_repeats_increment_weight_not_edges(self):
+        events = [village_event(i, "GPT-5", "village:bash", f"step {i}", seconds=i) for i in range(5)]
+        events.append(village_event(9, "GPT-5", "o3", "ping", seconds=9, action="message", mentions=["o3"]))
+        _, sentinel = village_replay(events)
+        self.assertEqual(sentinel.graph.number_of_edges(), 2)
+        heaviest = sentinel.weighted_edges()[0]
+        self.assertEqual((heaviest["source"], heaviest["target"], heaviest["weight"], heaviest["actions"]),
+                         ("GPT-5", "village:bash", 5, {"tool": 5}))
+
+    def test_window_weights_expire(self):
+        events = [village_event(i, "GPT-5", "o3", f"m{i}", seconds=i, action="message", mentions=["o3"]) for i in range(3)]
+        _, sentinel = village_replay(events)
+        self.assertEqual(sentinel.comm_graph.edges["GPT-5", "o3"]["weight"], 3)
+        late = village_event(9, "o3", "GPT-5", "reply", action="message", mentions=["GPT-5"])
+        late["timestamp"] = "2026-06-01T17:20:00+00:00"   # 20 minutes later: the first three left the 600 s window
+        sentinel.ingest(replay([late], OFF, ASPPolicy.load("ai-village"), mode="report-only", registry=REGISTRY,
+                               root="village", root_is_actor=False)[0].telemetry[0], SimpleNamespace(settings=OFF))
+        self.assertFalse(sentinel.comm_graph.has_edge("GPT-5", "o3"))
+        self.assertEqual(sentinel.comm_graph.edges["o3", "GPT-5"]["weight"], 1)
+
+    def test_run_exposes_weighted_edges(self):
+        run = simulate(RunInput(scenario="attack"))
+        weights = {(e["source"], e["target"]): e["weight"] for e in run["edges"]}
+        self.assertEqual(sum(weights.values()), sum(1 for e in run["events"] if e["executed"]))
+        self.assertIn("## Heaviest interactions", run["report"])
+
+
 class Normalization(unittest.TestCase):
     def setUp(self):
         self.n = Normalizer(AGENTS, {"s1": "a1"}, {"r1": "general"})

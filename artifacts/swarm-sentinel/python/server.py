@@ -82,7 +82,7 @@ def simulate(settings: RunInput):
                rootAgent=gateway.root, startedAt=events[0]["timestamp"], window=window,
                policyName=policy_name, policy=policy.declaration(),
                events=[t.model_dump() for t in gateway.telemetry],
-               alerts=sentinel.alerts, policies=sentinel.policy_changes,
+               alerts=sentinel.alerts, policies=sentinel.policy_changes, edges=sentinel.weighted_edges(),
                summary=summarize(gateway.telemetry, sentinel.alerts))
     run["report"] = markdown_report(run, settings)
     return run

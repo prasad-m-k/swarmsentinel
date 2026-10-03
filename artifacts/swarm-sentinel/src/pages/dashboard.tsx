@@ -14,6 +14,28 @@ const SPEEDS = [1, 10, 50];
 const TICK_BINS = 320;
 const FEED_LIMIT = 400;
 const SEVERITY: Record<string, number> = { allow: 0, observed: 1, throttle: 2, drop: 3 };
+const LABELED_EDGES = 20;
+
+type EdgeKind = 'lineage' | 'comm' | 'blocked';
+interface GEdge { from: string; to: string; kind: EdgeKind; n: number }
+interface EdgeTally { events: Trace[]; cursor: number; edges: Map<string, GEdge>; nodeIds: Set<string> }
+
+// Repeated interactions between the same pair fold into one edge whose weight (n) increments.
+function tallyEvent(t: EdgeTally, e: Trace, layout: Map<string, GNode>) {
+  const add = (from: string, to: string, kind: EdgeKind) => {
+    if (!from || !to || from === to || !layout.has(from) || !layout.has(to)) return;
+    t.nodeIds.add(from); t.nodeIds.add(to);
+    const k = `${from}|${to}|${kind}`;
+    const edge = t.edges.get(k);
+    if (edge) edge.n++; else t.edges.set(k, { from, to, kind, n: 1 });
+  };
+  if (e.parentId) add(e.parentId, e.agentId, 'lineage');
+  t.nodeIds.add(e.agentId);
+  add(e.agentId, e.target, !e.executed ? 'blocked' : 'comm');
+}
+function edgeWidth(e: GEdge) {
+  return e.kind === 'lineage' ? 1 : Math.min(5, 1.2 + Math.log2(e.n) * 0.7);
+}
 
 function policyDefaults(p?: PolicyDecl) {
   return p ? { maxDepth: p.delegation['max-depth'], semanticLimit: p.swarm['repeated-intent'].limit, writeLimit: p.swarm['write-cap'] }
@@ -208,23 +230,22 @@ export default function Dashboard() {
     return s;
   }, [alerts, policies]);
 
+  // Incremental tally: advancing the cursor folds in only the new events; a new run or a
+  // backwards scrub starts over. Replaying thousands of AI Village events stays O(new events) per tick.
+  const tally = useRef<EdgeTally | null>(null);
   const graph = useMemo(() => {
-    const nodeIds = new Set<string>();
-    const edges = new Map<string, { from: string; to: string; kind: 'lineage' | 'comm' | 'blocked'; n: number }>();
-    const add = (from: string, to: string, kind: 'lineage' | 'comm' | 'blocked') => {
-      if (!from || !to || from === to || !layout.has(from) || !layout.has(to)) return;
-      nodeIds.add(from); nodeIds.add(to);
-      const k = `${from}|${to}|${kind}`;
-      const e = edges.get(k);
-      if (e) e.n++; else edges.set(k, { from, to, kind, n: 1 });
-    };
-    visible.forEach((e) => {
-      if (e.parentId) add(e.parentId, e.agentId, 'lineage');
-      nodeIds.add(e.agentId);
-      add(e.agentId, e.target, !e.executed ? 'blocked' : 'comm');
-    });
-    return { nodeIds, edges: [...edges.values()] };
-  }, [visible, layout]);
+    let t = tally.current;
+    if (!t || t.events !== events || cursor < t.cursor) {
+      t = { events, cursor: 0, edges: new Map(), nodeIds: new Set() };
+    }
+    for (let i = t.cursor; i < cursor; i++) tallyEvent(t, events[i], layout);
+    t.cursor = cursor;
+    tally.current = t;
+    const edges = [...t.edges.values()];
+    const heaviest = new Set(edges.filter((e) => e.kind !== 'lineage' && e.n > 1)
+      .sort((a, b) => b.n - a.n).slice(0, LABELED_EDGES));
+    return { nodeIds: new Set(t.nodeIds), edges, heaviest };
+  }, [events, cursor, layout]);
 
   const counts = useMemo(() => {
     const c = { allow: 0, throttle: 0, drop: 0, observed: 0, executed: 0 };
@@ -320,6 +341,7 @@ export default function Dashboard() {
 
           <div className="absolute bottom-3 left-4 z-10 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground" style={mono}>
             <span style={{ color: C.ok }}>● normal agent</span>
+            <span style={{ color: C.ok }}>12 = edge weight (repeats)</span>
             <span style={{ color: C.bad }}>● detected cluster</span>
             <span style={{ color: C.tool }}>■ tool / page</span>
             <span style={{ color: C.bad }}>- - blocked attempt (not executed)</span>
@@ -356,12 +378,25 @@ export default function Dashboard() {
                 // slight curve so opposing edges don't overlap
                 const mx = (x1 + x2) / 2 - (dy / L) * (e.kind === 'comm' ? 14 : e.kind === 'blocked' ? -14 : 0);
                 const my = (y1 + y2) / 2 + (dx / L) * (e.kind === 'comm' ? 14 : e.kind === 'blocked' ? -14 : 0);
+                const labeled = e.kind !== 'lineage' && e.n > 1 && (focus ? !faded : graph.heaviest.has(e));
+                // Point on the curve at t = 0.5, where the weight label sits.
+                const lx = 0.25 * x1 + 0.5 * mx + 0.25 * x2, ly = 0.25 * y1 + 0.5 * my + 0.25 * y2;
                 return (
-                  <path key={`${e.from}${e.to}${e.kind}`} d={`M${x1} ${y1}Q${mx} ${my} ${x2} ${y2}`} fill="none" stroke={col}
-                    strokeWidth={e.kind === 'lineage' ? 1 : Math.min(3.5, 1.2 + e.n * 0.3)}
-                    strokeDasharray={e.kind === 'blocked' ? '5 4' : e.kind === 'lineage' ? '1 4' : undefined}
-                    opacity={faded ? 0.12 : e.kind === 'lineage' ? 0.8 : 0.85} markerEnd={`url(#arr-${mk})`}
-                    data-testid={`edge-${e.kind}-${e.from}-${e.to}`} />
+                  <g key={`${e.from}${e.to}${e.kind}`} data-testid={`edge-${e.kind}-${e.from}-${e.to}`} data-weight={e.n}>
+                    <title>{`${e.from} → ${e.to}: ${e.n} ${e.kind === 'blocked' ? 'blocked attempt' : e.kind === 'lineage' ? 'event under this parent' : 'interaction'}${e.n === 1 ? '' : 's'}`}</title>
+                    <path d={`M${x1} ${y1}Q${mx} ${my} ${x2} ${y2}`} fill="none" stroke={col}
+                      strokeWidth={edgeWidth(e)}
+                      strokeDasharray={e.kind === 'blocked' ? '5 4' : e.kind === 'lineage' ? '1 4' : undefined}
+                      opacity={faded ? 0.12 : e.kind === 'lineage' ? 0.8 : 0.85} markerEnd={`url(#arr-${mk})`} />
+                    {labeled && (
+                      <g transform={`translate(${lx} ${ly})`} opacity={faded ? 0.3 : 1}>
+                        <rect x={-(5 + String(e.n).length * 3.6)} y={-7.5} width={10 + String(e.n).length * 7.2} height={15} rx={7.5}
+                          fill="#0e1622" stroke={col} strokeWidth={1} />
+                        <text y={3.8} textAnchor="middle" fontSize={11} fontWeight={700} fill={col} style={mono}
+                          data-testid={`weight-${e.kind}-${e.from}-${e.to}`}>{e.n}</text>
+                      </g>
+                    )}
+                  </g>
                 );
               })}
               {[...graph.nodeIds].map((id) => {
