@@ -12,4 +12,5 @@ export type SwarmRunSource = typeof SwarmRunSource[keyof typeof SwarmRunSource];
 export const SwarmRunSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
+  live: 'live',
 } as const;

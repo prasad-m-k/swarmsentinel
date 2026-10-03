@@ -36,6 +36,10 @@ Python (repo root): `uv sync --frozen` creates `.venv`. pnpm is not installed gl
 # Dashboard dev server proxying to the engine
 SWARM_ENGINE_URL=http://127.0.0.1:8000 PORT=5173 BASE_PATH=/ npx -y pnpm@10 --filter @workspace/swarm-sentinel run dev
 
+# Live guard: demo and latency benchmark (from artifacts/swarm-sentinel/python)
+../../../.venv/bin/python examples/live_injection_demo.py [--remote http://127.0.0.1:8000]
+../../../.venv/bin/python examples/bench_latency.py
+
 # After any OpenAPI change
 npx -y pnpm@10 --filter @workspace/api-spec run codegen
 npx -y pnpm@10 run typecheck

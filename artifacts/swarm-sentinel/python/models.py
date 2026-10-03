@@ -37,7 +37,7 @@ class Event(BaseModel):
     intentVector: list[float]
     depth: int
     # Provenance and ASP evaluation inputs. Defaults keep synthetic samples valid.
-    source: Literal["synthetic", "ai-village"] = "synthetic"
+    source: Literal["synthetic", "ai-village", "live"] = "synthetic"
     sourceRef: str = ""
     detail: str = ""
     network: str = ""

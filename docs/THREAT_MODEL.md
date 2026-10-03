@@ -17,7 +17,7 @@ What SwarmSentinel defends against, how, with what evidence, and where it stops.
 
 ## Coverage
 
-Status key: **Enforced** means calls are blocked before execution in the synthetic scenarios. **Report-only** means real AI Village records are scored counterfactually; those actions had already happened. **Gap** means not covered.
+Status key: **Enforced** means calls are blocked before execution, in the synthetic scenarios and in live sessions through the guard wrapper (`sdk/guard.py`; the live demo replays T1 to T3 with real Python tools). **Report-only** means real AI Village records are scored counterfactually; those actions had already happened. **Gap** means not covered.
 
 | # | Threat vector | Controls (rule ids) | Evidence | Status |
 |---|---|---|---|---|
@@ -32,7 +32,7 @@ Status key: **Enforced** means calls are blocked before execution in the synthet
 
 ## Known gaps
 
-- **G1. No live interception yet.** The engine evaluates recorded event streams through `POST /api/swarm/simulate`. A per-call `evaluate` endpoint, an agent-side wrapper and latency measurements are the next phase. Until then, "enforced" means enforced within the simulated execution, not in front of a running agent.
+- **G1. Interception is cooperative.** Live sessions (`POST /api/swarm/sessions/{id}/evaluate`) decide each action before the agent runs it, and the guard wrapper refuses to run a denied call. Measured overhead on an Apple M2: p50 0.025 ms in-process, 0.40 ms over localhost HTTP (p99 0.27 ms and 0.75 ms; `examples/bench_latency.py`). But an agent that bypasses the wrapper and calls a tool directly is not stopped. Closing that needs the gateway in the tool path itself (an MCP or HTTP proxy in front of the tools), which is not built.
 - **G2. Taint propagation is off for AI Village.** Village agents share broadcast chat rooms, so propagating through messages would mark nearly every agent as tainted within minutes and carry no signal. Real deployments with directed agent-to-agent channels are the intended setting.
 - **G3. No explicit delegation-cycle or step-budget control.** Recursive delegation is bounded by the depth cap and duplicate-ID check, and conversational loops by the consensus and echo tripwires, but a task bouncing A to B to A, or one agent running an unbounded number of steps, has no dedicated rule. There is no token or cost budget.
 - **G4. Contamination is assigned, not detected.** The adapter labels reads as untrusted by source (web fetches, retrieved files). SwarmSentinel does not inspect content for injection text; it limits what a context can do once it has read untrusted content, which is the ASP paper's approach.
