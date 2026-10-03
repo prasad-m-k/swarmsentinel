@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 from asp_policy import argument_violation, host_allowed, tool_matches
 from models import Trace, Violation
@@ -10,7 +10,7 @@ DIRECTIVES = {
     "delegation.out_of_scope": "delegation.sub-agents", "delegation.scope_expansion": "delegation.sub-agents",
     "tools.write_cap": "swarm.write-cap", "semantic.identical_intent": "swarm.repeated-intent",
     "lineage.unknown": "delegation", "lineage.invalid": "delegation", "lineage.max_depth": "delegation.max-depth",
-    "lineage.duplicate": "delegation", "tripwire.revoked": "swarm.tripwires",
+    "lineage.duplicate": "delegation", "tripwire.revoked": "swarm.tripwires", "budget.steps": "swarm.step-budget",
 }
 
 
@@ -41,6 +41,8 @@ class ASPGateway:
         self.taint_groups = defaultdict(set)
         # Inherit-and-restrict delegation: agent -> tool patterns granted at spawn.
         self.scopes = {}
+        # Per-agent step budget: timestamps of in-band attempts inside the window.
+        self.steps = defaultdict(deque)
         self.telemetry = []
 
     @property
@@ -67,6 +69,17 @@ class ASPGateway:
             if agent in self.scopes:
                 yield agent, self.scopes[agent]
             agent = self.agents.get(agent, ("", 0, ""))[0]
+
+    def _over_budget(self, agent, now):
+        """Count every in-band attempt, blocked or not, so a retry loop stays throttled until it backs off."""
+        limit = self.policy.swarm.step_budget
+        if not limit:
+            return False
+        attempts = self.steps[agent]
+        while attempts and now - attempts[0] > self.window:
+            attempts.popleft()
+        attempts.append(now)
+        return len(attempts) > limit
 
     def _rate_checks(self, event, now, key, is_write, write_key):
         window, cap = self.window, self.policy.swarm.write_cap
@@ -128,6 +141,8 @@ class ASPGateway:
             decision, rule, reason = "drop", "lineage.max_depth", f"Hop depth {proposed_depth} exceeds cap {self.policy.delegation.max_depth}"
         elif self.is_revoked(event.agentId):
             decision, rule, reason = "drop", "tripwire.revoked", "Sentinel revoked this actor or an ancestor; downstream call not executed"
+        elif self._over_budget(event.agentId, now):
+            decision, rule, reason = "throttle", "budget.steps", f"Step budget of {self.policy.swarm.step_budget} actions per {self.window} seconds exhausted for this agent"
         elif event.action == "spawn" and event.target in self.agents:
             decision, rule, reason = "drop", "lineage.duplicate", "Agent ID already registered"
         elif event.action == "spawn" and (wider := [p for p in event.scope for _, scope in self._scope_chain(event.agentId) if not tool_matches(p, scope)]):

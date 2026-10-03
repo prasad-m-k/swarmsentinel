@@ -19,7 +19,7 @@ def generate(scenario):
 
     # The injection scenario gives each agent one session span so taint follows it between calls;
     # normal and attack keep one span per event, as in their checked-in samples.
-    session = scenario == "injection"
+    session = scenario in {"injection", "runaway"}
 
     def emit(agent, action, target, intent, channel="in_band", **extra):
         parent, depth, span = lineage.get(agent, ("", 0, ""))
@@ -37,6 +37,8 @@ def generate(scenario):
 
     if scenario == "injection":
         return injection(emit) or events
+    if scenario == "runaway":
+        return runaway(emit) or events
 
     for agent in ["researcher", "reviewer", "publisher"]:
         emit("orchestrator", "spawn", agent, f"Delegate distinct task to {agent}")
@@ -96,8 +98,25 @@ def injection(emit):
     emit("orchestrator", "tool", "mock:mcp:board.write", "Post: INV-4471 held for human review")
 
 
+def runaway(emit):
+    """No adversary: a plan-execute-critique cycle that never converges, and a scraper stuck retrying."""
+    for agent, task in [("planner", "Break the migration into steps"), ("executor", "Carry out planned steps"),
+                        ("critic", "Review executed steps")]:
+        emit("orchestrator", "spawn", agent, task)
+    emit("planner", "message", "executor", "Implement step 1: migrate the users table", mentions=["executor"])
+    emit("executor", "tool", "mock:search.read", "Look up the schema migration docs")
+    emit("executor", "message", "critic", "Step 1 done, please review", mentions=["critic"])
+    emit("critic", "message", "planner", "Rejected: step 1 must be re-planned", mentions=["planner"])
+    emit("planner", "message", "executor", "Re-implement step 1 with the revised plan", mentions=["executor"])
+    emit("executor", "tool", "mock:mcp:wiki.write", "Save step 1 again")
+    emit("orchestrator", "spawn", "scraper", "Fetch the vendor price list")
+    for attempt in range(1, 23):
+        emit("scraper", "tool", "mock:search.read", f"Retry vendor price list fetch, attempt {attempt}")
+    emit("orchestrator", "tool", "mock:mcp:board.write", "Post: migration paused for review")
+
+
 if __name__ == "__main__":
     folder = Path(__file__).parent / "samples"
     folder.mkdir(exist_ok=True)
-    for scenario in ["normal", "attack", "injection"]:
+    for scenario in ["normal", "attack", "injection", "runaway"]:
         (folder / f"{scenario}.json").write_text(json.dumps(generate(scenario), indent=2))

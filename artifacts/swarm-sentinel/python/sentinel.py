@@ -29,6 +29,8 @@ class Sentinel:
         self.detected = set()
         self.recent = defaultdict(list)
         self.policy_changes = []
+        # Hand-off chains: agent -> (time, path of agents whose messages led to it).
+        self.chains = {}
 
     def _link(self, a, b, delta):
         """Adjust one windowed communication edge; drop it (and orphaned agents) when its weight reaches zero."""
@@ -65,6 +67,20 @@ class Sentinel:
         if self.limits.echo_agents and len(agents) >= self.limits.echo_agents:
             origin = min(similar)[1]
             yield ("echo_cascade", f"{len(agents)} agents posted near-duplicate messages (token overlap >= {self.limits.echo_similarity:.0%}) within {self.window} seconds", agents, origin)
+
+    def _loops(self, now, trace):
+        """A message continues the chain its sender last received; reaching an agent already on it is a loop."""
+        incoming = self.chains.get(trace.agentId)
+        path = (incoming[1] if incoming and now - incoming[0] <= self.window else ()) + (trace.agentId,)
+        for recipient in trace.mentions or [trace.target]:
+            if recipient == trace.agentId:
+                continue
+            if recipient in path:
+                cycle = path[path.index(recipient):]
+                yield ("delegation_loop", f"Hand-offs looped back to {recipient}: {' -> '.join(cycle + (recipient,))}",
+                       sorted(set(cycle)), tuple(sorted(set(cycle))))
+            else:
+                self.chains[recipient] = (now, path[-20:])
 
     def _overlaps_recent(self, kind, agents, now):
         """A drifting cluster (one agent joins or leaves) is the same episode, not a new detection."""
@@ -103,6 +119,8 @@ class Sentinel:
         if trace.action == "message":
             candidates.extend(self._consensus(now, trace))
             candidates.extend(self._echo(now, trace))
+            if self.limits.delegation_loop and trace.channel == "in_band":
+                candidates.extend(self._loops(now, trace))
         if self.limits.taint_agents and trace.taintOrigin:
             reached = sorted(gateway.taint_groups[trace.taintOrigin])
             if len(reached) >= self.limits.taint_agents:

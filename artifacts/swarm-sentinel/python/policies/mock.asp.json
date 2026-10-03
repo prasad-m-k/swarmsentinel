@@ -31,6 +31,7 @@
     "window-seconds": 10,
     "repeated-intent": { "limit": 5, "min-agents": 3, "actions": ["tool"] },
     "write-cap": 6,
+    "step-budget": 20,
     "tripwires": {
       "fanout-children": 4,
       "shared-state-agents": 4,
@@ -38,7 +39,8 @@
       "consensus-density": 0.5,
       "echo-agents": 0,
       "echo-similarity": 0.6,
-      "taint-agents": 3
+      "taint-agents": 3,
+      "delegation-loop": true
     }
   }
 }

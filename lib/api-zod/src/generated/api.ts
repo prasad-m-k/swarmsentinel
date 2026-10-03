@@ -25,7 +25,7 @@ export const simulateSwarmBodyMaxEventsMax = 20000;
 
 
 export const SimulateSwarmBody = zod.object({
-  "scenario": zod.enum(['normal', 'attack', 'injection', 'ai-village']),
+  "scenario": zod.enum(['normal', 'attack', 'injection', 'runaway', 'ai-village']),
   "feedbackEnabled": zod.boolean(),
   "maxDepth": zod.number().int().min(1).max(simulateSwarmBodyMaxDepthMax).optional().describe('Defaults to the scenario policy'),
   "semanticLimit": zod.number().int().min(simulateSwarmBodySemanticLimitMin).max(simulateSwarmBodySemanticLimitMax).optional().describe('Defaults to the scenario policy'),

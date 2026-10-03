@@ -157,6 +157,45 @@ class InjectionDefense(unittest.TestCase):
         self.assertFalse(gateway.telemetry[2].contaminated)
 
 
+class LoopsAndBudgets(unittest.TestCase):
+    """Runaway execution with no adversary: a hand-off loop and a retry storm."""
+
+    def run_(self, feedback):
+        run = simulate(RunInput(scenario="runaway", feedbackEnabled=feedback))
+        return {int(e["id"][-3:]): e["rule"] for e in run["events"]}, run
+
+    def test_loop_detected_and_contained(self):
+        rules, run = self.run_(True)
+        loop = next(a for a in run["alerts"] if a["kind"] == "delegation_loop")
+        self.assertEqual((loop["agents"], loop["eventId"][-3:]), (["critic", "executor", "planner"], "007"))
+        self.assertIn("planner -> executor -> critic -> planner", loop["reason"])
+        self.assertEqual((rules[8], rules[9]), ("tripwire.revoked", "tripwire.revoked"))
+        self.assertEqual(rules[33], "policy.allow")
+
+    def test_step_budget_throttles_retry_storm(self):
+        for feedback in (True, False):
+            rules, _ = self.run_(feedback)
+            scraper = [rules[n] for n in range(11, 33)]
+            self.assertEqual(scraper, ["policy.allow"] * 20 + ["budget.steps"] * 2)
+
+    def test_budget_window_slides(self):
+        policy = ASPPolicy.load("mock")
+        policy.swarm.step_budget = 2
+        events = [dict(id=f"b{i}", timestamp=f"2026-10-03T16:00:{s:02d}+00:00", agentId="orchestrator", spanId="s",
+                       action="tool", channel="in_band", target="mock:search.read", intent=f"q{i}",
+                       intentVector=[0.0], depth=0) for i, s in enumerate([0, 1, 2, 30])]
+        gateway, _ = replay(events, OFF, policy)
+        self.assertEqual([t.rule for t in gateway.telemetry], ["policy.allow", "policy.allow", "budget.steps", "policy.allow"])
+
+    def test_village_policy_has_neither(self):
+        names = [n for n, _ in AGENTS.values()]
+        events = [village_event(i, names[i % 3], names[(i + 1) % 3], f"hand-off {i}", seconds=i, action="message",
+                                mentions=[names[(i + 1) % 3]]) for i in range(6)]
+        gateway, sentinel = village_replay(events)
+        self.assertNotIn("delegation_loop", [a["kind"] for a in sentinel.alerts])
+        self.assertNotIn("budget.steps", [t.rule for t in gateway.telemetry])
+
+
 class LiveInterception(unittest.TestCase):
     """The guard decides before the tool body runs; a denied call never executes."""
 

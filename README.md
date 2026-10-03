@@ -38,14 +38,15 @@ The goal is **containment with evidence**, rather than assuming that an agent's 
 
 ## Features
 
-- **Three synthetic scenarios**, evaluated in enforce mode: a normal run (15 events), a swarm attack (41) and a prompt-injection attack (14).
+- **Four synthetic scenarios**, evaluated in enforce mode: a normal run (15 events), a swarm attack (41), a prompt-injection attack (14) and a runaway loop with no adversary (33).
 - **Prompt-injection defense:** the injection scenario follows the ASP paper's Simulation A. A sub-agent reads a poisoned invoice that tells it to move money, and four layers stop it in turn: its delegated scope, the ban on widening scope when spawning, taint propagated to the agents it messages (which withdraws their payment capability), and an injection-spread tripwire that revokes the compromised branch while clean agents keep working.
-- **Live interception:** a session API decides each agent action before it runs, and a dependency-free Python guard (`@agent.tool(...)`, `agent.call(...)`) refuses to execute denied calls. Lineage is tracked by the guard and verified by the gateway. Measured overhead on an Apple M2: p50 0.025 ms in-process, 0.40 ms over localhost HTTP.
+- **Loop and budget controls:** a delegation-loop tripwire follows hand-off chains through messages and fires when work loops back to an agent already on the chain, and a per-agent step budget throttles retry storms (20 actions per 10 seconds in the mock policy). Blocked attempts count against the budget, so a looping agent stays throttled until it backs off.
+- **Live interception:** a session API decides each agent action before it runs, and a dependency-free Python guard (`@agent.tool(...)`, `agent.call(...)`) refuses to execute denied calls. Lineage is tracked by the guard and verified by the gateway. Measured overhead on an Apple M2 (20 agents, paced at 10 actions per second): p50 0.024 ms in-process, 0.39 ms over localhost HTTP.
 - **Threat model:** [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) maps each threat vector to its controls, evidence and status, including what is not covered.
 - **AI Village replay:** 1.23M normalized events from the 2026-09-20 export (chat, computer-use shell and tool actions, Claude Code tool calls), replayed in report-only mode by time window or indexed episode.
 - **Machine-readable ASP policies:** JSON declarations following the paper's schema (`network`, `tools`, `content-trust`, `delegation`, `reporting`) plus a `swarm` extension for rate limits and tripwire thresholds. See `artifacts/swarm-sentinel/python/policies/`.
 - **Policy gateway (Algorithm 1):** lineage admission and parent/span checks, recursion-depth limits, explicit deny list before a default-deny allowlist, argument constraints (for example credential-store access or force pushes), network destination scope, inherit-and-restrict delegated scopes, Biba-style content-trust contamination with optional propagation through messages, write budgets per shared resource, and repeated-intent throttling.
-- **Graph-based tripwires:** reciprocal communication clusters, coordinated writes to a shared resource, excessive admitted-child fan-out, echo cascades (several agents posting near-duplicate messages, by token overlap), and injection spread (one untrusted source reaching several agents).
+- **Graph-based tripwires:** reciprocal communication clusters, coordinated writes to a shared resource, excessive admitted-child fan-out, echo cascades (several agents posting near-duplicate messages, by token overlap), injection spread (one untrusted source reaching several agents), and delegation loops (hand-offs returning to an agent already on the chain).
 - **Policy feedback:** revoke implicated agents and block, or in report-only mode flag as would-block, their subsequent in-band calls and those of their descendants.
 - **Episode index:** a full scan ranks windows where tripwires cluster, so you can see where swarm-like coordination appeared over 17 months of village history.
 - **Flight recorder:** distinguish `allow`, `throttle`, `drop` and out-of-band `observed` events, with structured violation records, policy versions, execution status, and a `sourceRef` back to the dataset row.
@@ -61,6 +62,8 @@ The goal is **containment with evidence**, rather than assuming that an agent's 
 | Recursion depth | Maximum 4 hops | Maximum 4 hops (agents sit at depth 1) |
 | Repeated intent | Throttle the 5th matching intent and target across 3+ agents in 10 s (tools) | Same, in 600 s, for tools and chat |
 | Writes | 6 per target per 10 s | 12 per shared resource per 600 s |
+| Step budget | 20 actions per agent per 10 s (blocked attempts count) | Off |
+| Delegation-loop tripwire | On | Off (broadcast chat makes hand-off chains ambiguous) |
 | Tools | Mock allowlist: `mock:search.read`, `mock:mcp:wiki.write`, `mock:mcp:board.write` | Village tools and Claude Code tools; argument rules deny piping remote scripts to a shell, recursive deletes of root or home, force pushes, credential-store reads and environment secret disclosure |
 | Network | Not applicable | Default deny; allows the village's GitLab/GitHub pages and repos, Google Workspace, theaidigest.org, its Cloudflare Workers and localhost |
 | Content trust | Tainted contexts may not write or call `mock:payments.*`; taint propagates through messages; injection-spread tripwire at 3 agents | Writes after reading untrusted content are reported, not blocked; no propagation |
@@ -107,8 +110,9 @@ The AI Village replay is the first test of this against real heterogeneous agent
 5. Change policy limits or the feedback setting, then run the scenario again for comparison.
 6. After replay completes, download the JSON traces and Markdown report.
 7. Select **Prompt Injection** and **Run Demo**. Step through it: the parser's own payment call is out of scope, its attempt to spawn a payment helper is refused, the ledger agent (which does hold payment rights) is blocked because it received tainted instructions, and the tripwire revokes all three while the orchestrator keeps working. Turn feedback off and rerun to see the taint rule alone stop the notifier's write.
-8. Select **Live**, then **Launch attack demo**. The same attack runs against a real live session at watchable pace, and each decision streams into the dashboard as the gateway makes it. Any session started by an agent using the guard (for example `python examples/live_injection_demo.py --remote http://127.0.0.1:8000 --pause 1.5`) appears in the session list and can be watched the same way.
-9. Locally, with an AI Village store built: select **AI Village**, choose an episode (ranked by tripwire activity), set speed to 10x or 50x, and **Replay**. The **Limits & data** tab summarizes what the policy would have blocked.
+8. Select **Runaway Loop** and **Run Demo**. A planner, executor and critic keep handing work around; the loop tripwire fires the moment the critic hands back to the planner, and the revoked agents' next moves are dropped. A separate scraper retries a fetch 22 times; the step budget throttles attempts 21 and 22.
+9. Select **Live**, then **Launch attack demo**. The same attack runs against a real live session at watchable pace, and each decision streams into the dashboard as the gateway makes it. Any session started by an agent using the guard (for example `python examples/live_injection_demo.py --remote http://127.0.0.1:8000 --pause 1.5`) appears in the session list and can be watched the same way.
+10. Locally, with an AI Village store built: select **AI Village**, choose an episode (ranked by tripwire activity), set speed to 10x or 50x, and **Replay**. The **Limits & data** tab summarizes what the policy would have blocked.
 
 Runs are ephemeral. Export a run before replacing it with another simulation.
 
@@ -301,7 +305,7 @@ curl -X POST http://localhost:8000/api/swarm/simulate \
   -d '{"scenario": "ai-village", "start": "2026-05-11T16:30:00Z", "end": "2026-05-11T18:00:00Z"}'
 ```
 
-`scenario` accepts `normal`, `attack`, `injection` or `ai-village`. Omitted limits fall back to the scenario's policy file. The response contains the run ID, provenance, mode, policy declaration, replay window, recorded events, alerts, policy changes, a summary, and the Markdown report.
+`scenario` accepts `normal`, `attack`, `injection`, `runaway` or `ai-village`. Omitted limits fall back to the scenario's policy file. The response contains the run ID, provenance, mode, policy declaration, replay window, recorded events, alerts, policy changes, a summary, and the Markdown report.
 
 ## Repository layout
 
