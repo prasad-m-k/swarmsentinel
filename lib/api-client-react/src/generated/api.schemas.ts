@@ -254,6 +254,8 @@ export interface ReplayWindow {
   episodeId?: string | null;
   day: string;
   regime: string;
+  /** Structure-only snapshot: intent and command text replaced by keyed hashes */
+  textWithheld?: boolean;
 }
 
 export type RunSummaryDecisions = {[key: string]: number};

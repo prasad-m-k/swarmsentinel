@@ -126,7 +126,8 @@ export const SimulateSwarmResponse = zod.object({
   "truncated": zod.boolean(),
   "episodeId": zod.string().nullish(),
   "day": zod.string(),
-  "regime": zod.string()
+  "regime": zod.string(),
+  "textWithheld": zod.boolean().optional().describe('Structure-only snapshot: intent and command text replaced by keyed hashes')
 }),zod.null()]).optional(),
   "summary": zod.object({
   "decisions": zod.record(zod.string(), zod.number().int()),
@@ -612,7 +613,8 @@ export const GetSwarmSessionResponse = zod.object({
   "truncated": zod.boolean(),
   "episodeId": zod.string().nullish(),
   "day": zod.string(),
-  "regime": zod.string()
+  "regime": zod.string(),
+  "textWithheld": zod.boolean().optional().describe('Structure-only snapshot: intent and command text replaced by keyed hashes')
 }),zod.null()]).optional(),
   "summary": zod.object({
   "decisions": zod.record(zod.string(), zod.number().int()),
@@ -757,7 +759,8 @@ export const GetSwarmDemoSessionResponse = zod.object({
   "truncated": zod.boolean(),
   "episodeId": zod.string().nullish(),
   "day": zod.string(),
-  "regime": zod.string()
+  "regime": zod.string(),
+  "textWithheld": zod.boolean().optional().describe('Structure-only snapshot: intent and command text replaced by keyed hashes')
 }),zod.null()]).optional(),
   "summary": zod.object({
   "decisions": zod.record(zod.string(), zod.number().int()),

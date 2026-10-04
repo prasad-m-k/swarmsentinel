@@ -319,6 +319,38 @@ class WeightedGraph(unittest.TestCase):
         self.assertIn("## Heaviest interactions", run["report"])
 
 
+class StructureOnlySnapshot(unittest.TestCase):
+    """village.snapshot withholds text but keeps every replay decision input."""
+
+    def setUp(self):
+        from village.snapshot import Withholder
+        self.w = Withholder(ASPPolicy.load("ai-village"))
+
+    def test_equality_and_overlap_survive(self):
+        from sentinel import _jaccard, _tokens
+        a, b = "Confirmed  the leaderboard RESULTS are final", "confirmed the leaderboard results are final"
+        c = "Confirmed the leaderboard results changed today"
+        norm = lambda t: " ".join(t.lower().split())
+        self.assertEqual(norm(self.w.intent(a)), norm(self.w.intent(b)))
+        self.assertNotEqual(self.w.intent(a), self.w.intent(c))
+        self.assertAlmostEqual(_jaccard(_tokens(self.w.intent(a)), _tokens(self.w.intent(c))), _jaccard(_tokens(a), _tokens(c)))
+
+    def test_no_original_words_remain(self):
+        hashed = self.w.intent("Please wire the payment to routing 021000021 today")
+        for word in ("please", "wire", "payment", "routing", "021000021", "today"):
+            self.assertNotIn(word, hashed)
+
+    def test_detail_keeps_only_rule_fragment(self):
+        cmd = "cd ~/repo && TOKEN=$(grep token ~/.config/glab-cli/config.yml) && curl -s https://api.example.org/x"
+        self.assertEqual(self.w.detail("village:bash", cmd), "~/.config/glab-cli")
+        self.assertEqual(self.w.detail("village:bash", "ls -la && git status"), "")
+
+    def test_fresh_key_per_export(self):
+        from village.snapshot import Withholder
+        other = Withholder(ASPPolicy.load("ai-village"))
+        self.assertNotEqual(self.w.intent("same words"), other.intent("same words"))
+
+
 class Normalization(unittest.TestCase):
     def setUp(self):
         self.n = Normalizer(AGENTS, {"s1": "a1"}, {"r1": "general"})

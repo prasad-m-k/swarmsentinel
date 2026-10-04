@@ -2,6 +2,8 @@
 
 **ASP-inspired runtime policies and a multi-agent incident flight recorder.**
 
+Built for the AI Swarm Dynamics Hackathon as an independent research prototype. Released under the [MIT License](LICENSE); read the [Disclaimer](DISCLAIMER.md) before relying on it for anything.
+
 SwarmSentinel is an **AI Swarm Dynamics Hackathon prototype** for investigating runaway coordination in multi-agent systems. It combines a policy gateway, graph-based tripwire detection, and an interactive forensic dashboard.
 
 Suggested follow-ups for the real implementation are tracked in [TODO.md](TODO.md); they are deferred beyond the PoC.
@@ -279,6 +281,27 @@ Aggregate results from replaying all 389 village days (1,233,716 normalized even
 
 The credential-store reads are mostly agents pulling the GitLab token out of `glab`'s config to call the API directly. That is routine for the village, but it's the kind of standing access a least-privilege policy would route through a scoped tool. The default network allowlist is deliberately narrow, so most network drops are ordinary research reading (prediction-market APIs, arXiv, news sites); they show how far a strict scope sits from how these agents actually work.
 
+**Judges:** [docs/JUDGES.md](docs/JUDGES.md) is a step-by-step guide to building your own store from your own approved download and viewing the results, from the command line (`python -m village.replay`) or the dashboard.
+
+#### Bring your own database, or host a private snapshot
+
+AI Village data is gated and never ships with this repository. The **AI Village** tab appears only when the engine finds a store at `$SWARMSENTINEL_DATA_DIR/village.sqlite` (default `data/ai-village/`) **and** the signed-in account is an approved reader (`SWARM_ENABLE_VILLAGE=true`, account ID listed in `SWARM_VILLAGE_READERS`). Everyone else sees the synthetic and live scenarios.
+
+- **Researchers with their own approved access:** download the tables, run `village.ingest` and `village.scan` as above. The result is the full store (about 930 MB for the 2026-09-20 export).
+- **Hosting replay on a published app:** export a reduced, structure-only snapshot instead of the full store:
+
+  ```bash
+  cd artifacts/swarm-sentinel/python
+  python -m village.snapshot --episodes 60
+  # -> data/ai-village/snapshot/village-snapshot.sqlite (+ .gz, + .sha256), about 64 MB / 50 MB gzipped
+  ```
+
+  The snapshot keeps only the top-ranked episodes. Intent text is replaced word by word with keyed hashes (the key is random and discarded), shell commands keep only the fragment an argument rule matched, and hash fingerprints are emptied. Replay decisions, alerts and revocations are identical to the full store; this was checked on all 60 episodes with feedback on and off. The dashboard shows "withheld" in place of narration.
+
+  Store the `.gz` and `.sha256` in private storage (for example Replit App Storage), have the engine verify the checksum and decompress it to `$SWARMSENTINEL_DATA_DIR/village.sqlite` at start-up, and treat the local file as a cache only.
+
+The snapshot is still derived from the AI Village dataset and remains under its research terms. Keep it private, list only accounts covered by an approved access request in `SWARM_VILLAGE_READERS`, and do not publish the file or replay exports. Showing it to anyone else (for example judges) needs AI Digest's permission first; see [access notes](docs/ai-village-access.md).
+
 ### 6. Check and build
 
 ```bash
@@ -399,3 +422,7 @@ pnpm --filter @workspace/api-spec run codegen
 Threat coverage and known gaps: [threat model](docs/THREAT_MODEL.md). Dataset terms and handling rules: [access notes](docs/ai-village-access.md). Research context: [aivillage-context](docs/aivillage-context.md).
 
 Cite the dataset as: AI Digest, "AI Village dataset", 2026. https://theaidigest.org/village
+
+## License and disclaimer
+
+MIT, see [LICENSE](LICENSE). The license does not cover the AI Village dataset (not included) or other third-party material; see [DISCLAIMER.md](DISCLAIMER.md).
