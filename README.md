@@ -364,7 +364,7 @@ pnpm --filter @workspace/api-spec run codegen
 - **Scaffolding regimes:** behaviour before and after the 2026-03-24 perma-computer-use change, and chat after the 2026-02-10 auto-nudger, reflect scaffolding changes as well as agent behaviour.
 - **No sub-agent lineage in the data:** depth and fan-out rules are only exercised by the synthetic scenarios.
 - **In-band containment only:** out-of-band activity is observed; the gateway cannot block or undo it.
-- **No tamper-proof boundary:** policy and recording share a process. Production enforcement would require isolation and durable, trustworthy telemetry.
+- **Not yet a tamper-proof boundary:** in remote mode the gateway runs in the engine process, separate from the agents, but the session API has no authentication and the caller chooses the session's policy. In-process mode runs the gateway inside the agent's own process. See the [threat model](docs/THREAT_MODEL.md), T8 and G6.
 - **Approximate intent matching:** repeated-intent throttling uses normalized text equality; the echo detector uses token overlap. Neither recognizes paraphrase.
 - **Heuristic detection:** collaboration the village was asked to do will trip alerts. Thresholds were calibrated on this dataset and need re-tuning elsewhere.
 - **Not a production security guarantee:** ASP is the inspiration for the prototype, not a claim of conformance to an adopted standard.
