@@ -61,3 +61,6 @@ __pycache__/
 
 # graphify knowledge-graph cache and outputs (local)
 /graphify-out/
+
+# Office lock files
+~$*
