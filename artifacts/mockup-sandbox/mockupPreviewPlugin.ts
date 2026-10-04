@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { readdir, realpath, stat } from "node:fs/promises";
 import path from "path";
-import glob from "fast-glob";
 import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
 import type { Plugin } from "vite";
@@ -40,10 +40,46 @@ export function mockupPreviewPlugin(): Plugin {
   }
 
   async function discoverComponents(): Promise<Array<DiscoveredComponent>> {
-    const files = await glob(`${MOCKUPS_DIR}/**/*.tsx`, {
-      cwd: root,
-      ignore: ["**/_*/**", "**/_*.tsx"],
-    });
+    function missingPath(error: unknown): boolean {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === "ENOENT" || code === "ELOOP";
+    }
+
+    async function walk(directory: string, ancestors: Set<string>): Promise<string[]> {
+      let canonical: string;
+      try {
+        canonical = await realpath(directory);
+      } catch (error) {
+        if (missingPath(error)) return [];
+        throw error;
+      }
+      if (ancestors.has(canonical)) return []; // Do not recurse through symlink cycles.
+      const parents = new Set(ancestors).add(canonical);
+      const files: string[] = [];
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (entry.name.startsWith("_") || entry.name.startsWith(".")) continue;
+        const absolute = path.join(directory, entry.name);
+        let isDirectory = entry.isDirectory();
+        let isFile = entry.isFile();
+        if (entry.isSymbolicLink()) {
+          try {
+            const target = await stat(absolute);
+            isDirectory = target.isDirectory();
+            isFile = target.isFile();
+          } catch (error) {
+            if (missingPath(error)) continue;
+            throw error;
+          }
+        }
+        if (isDirectory) files.push(...await walk(absolute, parents));
+        else if (isFile && entry.name.endsWith(".tsx")) {
+          files.push(path.relative(root, absolute).split(path.sep).join("/"));
+        }
+      }
+      return files;
+    }
+
+    const files = (await walk(getMockupsAbsDir(), new Set())).sort();
 
     return files.map((f) => ({
       globKey: "./" + f.slice("src/".length),

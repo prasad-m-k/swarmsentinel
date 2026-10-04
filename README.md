@@ -50,7 +50,7 @@ The goal is **containment with evidence**, rather than assuming that an agent's 
 - **Policy feedback:** revoke implicated agents and block, or in report-only mode flag as would-block, their subsequent in-band calls and those of their descendants.
 - **Episode index:** a full scan ranks windows where tripwires cluster, so you can see where swarm-like coordination appeared over 17 months of village history.
 - **Flight recorder:** distinguish `allow`, `throttle`, `drop` and out-of-band `observed` events, with structured violation records, policy versions, execution status, and a `sourceRef` back to the dataset row.
-- **Live dashboard mode:** watch any live session as decisions stream in, or launch the injection attack from the browser. The timeline follows the live edge unless you scrub back to inspect.
+- **Live dashboard mode:** sign in to watch your own private sessions as decisions stream in, or use the separate public synthetic injection demo. The timeline follows the live edge unless you scrub back to inspect.
 - **Interactive dashboard:** directed agent/resource graph, event details, enforcement feed, tripwire history, policy controls, replay speed, and timeline.
 - **Exports:** download a Markdown incident report or a provenance-aware JSON run record after replay completes.
 - **Presentation:** eight slides covering the problem, approach, design, architecture and prototype boundaries.
@@ -122,6 +122,23 @@ Runs are ephemeral. Export a run before replacing it with another simulation.
 
 ## Build and run
 
+### Real LLM agent showcase
+
+The Live dashboard can monitor three **real model-driven agents**, not just the scripted attack demonstration. Their four registered tools operate on engine-owned sandbox files. The authenticated server route evaluates ASP and dispatches under one session lock; the runner receives the tool result without local tool bodies or sandbox paths. Generic guard wrappers remain cooperative, and this is not OS isolation.
+
+With the engine running and the Replit OpenAI integration configured, run these from the repository root:
+
+```bash
+python artifacts/swarm-sentinel/python/examples/real_agents_demo.py --mode normal --token-file /path/to/private/clerk-token.jwt
+python artifacts/swarm-sentinel/python/examples/real_agents_demo.py --mode adversarial --token-file /path/to/private/clerk-token.jwt
+```
+
+Sign in as the token's owner, open **Live → My private sessions**, choose the **Real LLM agents** session, then **Watch**. Keep the token file outside the repository with user-only permissions (chmod 600), and refresh its Clerk session JWT before expiry. The normal run reads an internal invoice, changes a fictional-credit ledger, and writes a status file. The adversarial run deliberately requests out-of-scope and contaminated actions to demonstrate refusals before the tool body runs. It is an explicitly instructed stress test, not a claim that the model spontaneously fell for injection.
+
+Model calls use Replit's OpenAI integration and are billed to credits; no personal API key is needed on Replit. The default is `gpt-5.4-mini`. Runs are terminal-launched, not exposed through a public paid-launch endpoint. Outputs are stored under the gitignored `data/agent-demos/` directory.
+
+See [the real-agent showcase guide](docs/real-agent-showcase.md) for roles, policy boundaries, evidence, and local setup.
+
 ### Prerequisites
 
 - **Node.js 24**
@@ -184,6 +201,14 @@ Open **http://localhost:5173/**. Keep the engine terminal running.
 Both Vite configuration variables are required, including during builds. `BASE_PATH=/` places the dashboard at the site root.
 
 ### 4. Live interception
+
+Private live HTTP routes require a verified Clerk session and enforce owner-only
+access. Browser requests use cookies; remote guards need a refreshed Clerk token
+provider. Public synthetic demos have isolated storage and read-only
+snapshot/stream routes. AI Village HTTP access is disabled by default until
+explicitly enabled for approved readers. See [live-session access](docs/live-session-access.md)
+for configuration, exports, and security limits. These source changes do not
+update an already published deployment.
 
 Agents ask the gateway before acting. Copy `artifacts/swarm-sentinel/python/sdk/guard.py` into an agent project (standard library only), or run in-process next to the engine:
 

@@ -1,0 +1,38 @@
+{
+  "asp-version": "1.0",
+  "description": "Real LLM agent showcase with actual file-backed tools in a disposable sandbox. No external payments, arbitrary filesystem access, or shell execution.",
+  "network": {"default": "deny", "allow": []},
+  "tools": {
+    "default": "deny",
+    "allow": ["demo:invoice.read", "demo:ledger.read", "demo:payments.transfer", "demo:board.write"],
+    "deny": [],
+    "deny-arguments": []
+  },
+  "content-trust": {
+    "system-prompt": "high",
+    "user-input": "medium",
+    "tool-response": "low",
+    "retrieved-document": "untrusted",
+    "contaminated-write": "deny",
+    "contaminated-deny": ["demo:payments.*"],
+    "propagate-via-messages": true
+  },
+  "delegation": {"sub-agents": "inherit-and-restrict", "max-depth": 4},
+  "reporting": {"violations": "local:flight-recorder"},
+  "swarm": {
+    "window-seconds": 30,
+    "repeated-intent": {"limit": 5, "min-agents": 3, "actions": ["tool"]},
+    "write-cap": 6,
+    "step-budget": 20,
+    "tripwires": {
+      "fanout-children": 4,
+      "shared-state-agents": 4,
+      "consensus-min-cluster": 3,
+      "consensus-density": 0.5,
+      "echo-agents": 0,
+      "echo-similarity": 0.6,
+      "taint-agents": 3,
+      "delegation-loop": true
+    }
+  }
+}

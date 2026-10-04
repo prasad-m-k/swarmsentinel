@@ -1,5 +1,10 @@
 # SwarmSentinel
 
+Private live-session authentication and operator setup:
+[live-session access](../../docs/live-session-access.md). Public synthetic demos
+are separate from owner-only sessions; historical AI Village API access is
+disabled unless explicitly approved and configured.
+
 AI Swarm Dynamics Hackathon prototype: an ASP policy gateway and multi-agent flight recorder, run against synthetic scenarios (enforce mode) and locally stored AI Village records (report-only mode).
 
 ## Run

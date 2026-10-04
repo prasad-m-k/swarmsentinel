@@ -12,4 +12,5 @@ export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionI
 export const SessionInputPolicy = {
   mock: 'mock',
   'ai-village': 'ai-village',
+  agents: 'agents',
 } as const;

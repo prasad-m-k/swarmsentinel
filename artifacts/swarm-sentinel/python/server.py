@@ -4,7 +4,7 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from asp_policy import ASPPolicy
@@ -14,6 +14,9 @@ from pipeline import replay, summarize
 from reporter import markdown_report
 from village import store
 from village.normalize import PERMA_COMPUTER_USE, pacific_day
+from auth import Principal, require_principal, still_valid, village_access
+from sandbox import ExecutionInput, SandboxInput
+from pydantic import ValidationError
 
 app = FastAPI(title="SwarmSentinel Python Engine", docs_url="/api/swarm/docs",
               openapi_url="/api/swarm/openapi.json", redoc_url=None)
@@ -22,6 +25,17 @@ SYNTHETIC = "Synthetic sample traces. Not AI Village data or a real incident rep
 VILLAGE = "AI Village dataset replay (historical records, report-only). Decisions are counterfactual."
 LIVE = "Live session: each call was decided before the calling agent executed it."
 SESSIONS = SessionStore()
+DEMOS = SessionStore(limit=20)
+
+
+@app.middleware("http")
+async def private_response_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/swarm"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Vary"] = "Cookie, Authorization"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def _village_db():
@@ -33,12 +47,19 @@ def _village_db():
 
 @app.get("/api/swarm/health")
 def health():
-    return {"status": "ok", "provenance": "synthetic", "aiVillage": store.DB_PATH.exists()}
+    return {"status": "ok", "provenance": "synthetic"}
 
 
 @app.get("/api/swarm/sources")
-def sources():
+def sources(request: Request):
     policies = {name: ASPPolicy.load(name).declaration() for name in ("mock", "ai-village")}
+    # Public discovery must not leak even metadata from a private dataset.
+    try:
+        approved = village_access(require_principal(request))
+    except HTTPException:
+        approved = False
+    if not approved:
+        return {"aiVillage": {"available": False, "episodes": []}, "policies": policies}
     db = store.connect()
     if db is None:
         return {"aiVillage": {"available": False, "episodes": []}, "policies": policies}
@@ -72,8 +93,12 @@ def _village_events(settings):
 
 
 @app.post("/api/swarm/simulate")
-def simulate(settings: RunInput):
+def simulate(settings: RunInput, request: Request = None):
     village = settings.scenario == "ai-village"
+    if village and request is None:
+        raise HTTPException(401, "Authentication required")
+    if village and not village_access(require_principal(request)):
+        raise HTTPException(403, "Private AI Village access is not approved")
     policy_name = "ai-village" if village else "mock"
     policy = ASPPolicy.load(policy_name).with_overrides(settings.maxDepth, settings.semanticLimit, settings.writeLimit)
     if village:
@@ -99,19 +124,23 @@ def _run(run_id, scenario, source, provenance, gateway, sentinel, policy_name, p
     return run
 
 
-def _session(session_id):
+def _session(session_id, principal):
     session = SESSIONS.get(session_id)
-    if session is None:
-        raise HTTPException(404, f"Unknown or expired session {session_id}")
+    if session is None or session.owner != principal.subject:
+        raise HTTPException(404, "Unknown or expired session")
     return session
 
 
 @app.get("/api/swarm/sessions")
-def list_sessions():
+def list_sessions(principal: Principal = Depends(require_principal)):
     """Live sessions, newest first, so the dashboard can attach to one."""
-    rows = []
     with SESSIONS.lock:
-        sessions = list(SESSIONS.sessions.values())
+        sessions = [s for s in SESSIONS.sessions.values() if s.owner == principal.subject]
+    return _summaries(sessions)
+
+
+def _summaries(sessions):
+    rows = []
     for s in sessions:
         with s.lock:
             rows.append(dict(sessionId=s.id, created=s.created, policyName=s.spec.policy, root=s.spec.root,
@@ -120,34 +149,80 @@ def list_sessions():
 
 
 @app.post("/api/swarm/sessions", status_code=201)
-def create_session(spec: SessionInput):
-    session = SESSIONS.create(spec)
+def create_session(spec: SessionInput, principal: Principal = Depends(require_principal)):
+    try:
+        session = SESSIONS.create(spec, owner=principal.subject)
+    except OverflowError:
+        raise HTTPException(429, "Session capacity reached; delete an owned session before creating another")
     return {"sessionId": session.id, "policyName": spec.policy, "root": spec.root,
             "feedbackEnabled": spec.feedbackEnabled, "policy": session.policy.declaration()}
 
 
 @app.post("/api/swarm/sessions/{session_id}/evaluate")
-def evaluate(session_id: str, call: CallInput):
+def evaluate(session_id: str, call: CallInput, principal: Principal = Depends(require_principal)):
     """Decide one proposed action before the agent runs it. allowed=false means: do not execute."""
-    return _session(session_id).evaluate(call)
+    return _session(session_id, principal).evaluate(call)
+
+
+@app.post("/api/swarm/sessions/{session_id}/sandbox", status_code=201)
+def configure_sandbox(session_id: str, spec: SandboxInput, principal: Principal = Depends(require_principal)):
+    """Create fixed fictional fixtures only; never accept a directory or launch inference."""
+    try:
+        return _session(session_id, principal).configure_sandbox(spec.mode)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/swarm/sessions/{session_id}/sandbox")
+def sandbox_snapshot(session_id: str, principal: Principal = Depends(require_principal)):
+    try:
+        return _session(session_id, principal).sandbox_snapshot()
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/swarm/sessions/{session_id}/execute")
+def execute_tool(session_id: str, spec: ExecutionInput, principal: Principal = Depends(require_principal)):
+    """Authorization, evaluation and registered dispatch; there is no execute-after-allow API."""
+    try:
+        session = _session(session_id, principal)
+        with session.lock:
+            if not still_valid(principal):
+                raise HTTPException(401, "Authentication expired")
+            return session.execute(spec)
+    except ValidationError:
+        raise HTTPException(422, "Invalid registered tool arguments")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.get("/api/swarm/sessions/{session_id}")
-def session_run(session_id: str):
-    s = _session(session_id)
+def session_run(session_id: str, principal: Principal = Depends(require_principal)):
+    return _snapshot(_session(session_id, principal))
+
+
+def _snapshot(s, demo=False):
     with s.lock:
         started = s.gateway.telemetry[0].timestamp if s.gateway.telemetry else s.created
-        return _run(s.id, "live", "live", LIVE, s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started)
+        return _run(s.id, "live", "live", SYNTHETIC if demo else LIVE,
+                    s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started)
 
 
 @app.get("/api/swarm/sessions/{session_id}/stream")
-async def stream_session(session_id: str, after: int = 0):
+async def stream_session(session_id: str, after: int = 0, principal: Principal = Depends(require_principal)):
     """Server-sent events: each message carries traces after `after`, plus current alerts and revocations."""
-    _session(session_id)
+    _session(session_id, principal)
+    return _stream(SESSIONS, session_id, after, principal)
+
+
+def _stream(session_store, session_id, after, principal=None):
 
     async def events():
         sent, idle = max(0, after), 0
-        while (s := SESSIONS.get(session_id)) is not None:
+        while (s := session_store.get(session_id)) is not None:
+            if principal and (not still_valid(principal) or s.owner != principal.subject):
+                yield "event: auth-expired\ndata: {}\n\n"
+                return
             with s.lock:
                 fresh = [t.model_dump() for t in s.gateway.telemetry[sent:]]
                 alerts, policies = list(s.sentinel.alerts), list(s.sentinel.policy_changes)
@@ -163,10 +238,11 @@ async def stream_session(session_id: str, after: int = 0):
         yield "event: closed\ndata: {}\n\n"
 
     return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 class DemoInput(BaseModel):
+    model_config = {"extra": "forbid"}
     feedbackEnabled: bool = True
     pause: float = Field(default=1.2, ge=0, le=5)
 
@@ -176,15 +252,41 @@ def launch_injection_demo(spec: DemoInput):
     """Start the poisoned-invoice attack against a fresh live session, paced for watching."""
     from demo import run_injection
     from sdk.guard import Guard, _Local
-    session = SESSIONS.create(SessionInput(feedbackEnabled=spec.feedbackEnabled))
-    session.label = "Prompt-injection demo"
-    guard = Guard(_Local(SESSIONS), session_id=session.id)
+    session = DEMOS.create(SessionInput(feedbackEnabled=spec.feedbackEnabled))
+    session.label = "PUBLIC SYNTHETIC prompt-injection demo"
+    guard = Guard(_Local(DEMOS), session_id=session.id)
     threading.Thread(target=run_injection, args=(guard, spec.pause), daemon=True).start()
     return {"sessionId": session.id}
 
 
 @app.delete("/api/swarm/sessions/{session_id}", status_code=204)
-def delete_session(session_id: str):
+def delete_session(session_id: str, principal: Principal = Depends(require_principal)):
+    _session(session_id, principal)
     if not SESSIONS.delete(session_id):
         raise HTTPException(404, f"Unknown or expired session {session_id}")
     return Response(status_code=204)
+
+
+@app.get("/api/swarm/demo/sessions")
+def list_demo_sessions():
+    with DEMOS.lock:
+        sessions = list(DEMOS.sessions.values())
+    return _summaries(sessions)
+
+
+def _demo_session(session_id):
+    session = DEMOS.get(session_id)
+    if session is None:
+        raise HTTPException(404, "Unknown or expired demonstration")
+    return session
+
+
+@app.get("/api/swarm/demo/sessions/{session_id}")
+def demo_snapshot(session_id: str):
+    return _snapshot(_demo_session(session_id), demo=True)
+
+
+@app.get("/api/swarm/demo/sessions/{session_id}/stream")
+async def demo_stream(session_id: str, after: int = 0):
+    _demo_session(session_id)
+    return _stream(DEMOS, session_id, after)

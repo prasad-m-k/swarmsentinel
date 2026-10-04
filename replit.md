@@ -2,7 +2,7 @@
 
 **Description:** AI Swarm Dynamics Hackathon.
 
-**Status:** ASP-inspired policy gateway and multi-agent flight recorder, with synthetic enforcement, optional AI Village historical replay, and cooperative live interception.
+**Status:** ASP-inspired policy gateway and multi-agent flight recorder, with synthetic enforcement, optional AI Village historical replay, cooperative live interception, and a real LLM-backed agent showcase.
 
 **ASP paper permission:** The project owner authored the ASP paper and has explicitly permitted its use freely in this project. This does not change the separate access and research-use restrictions on AI Village data.
 
@@ -17,10 +17,11 @@
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9, React, Vite, Tailwind CSS.
 - Product engine: Python 3.13+, FastAPI, Pydantic, NetworkX, NumPy.
+- Real-agent showcase: bounded LLM tool-calling agents launched from the workspace terminal, with working sandbox files and ledger operations checked by the ASP Gateway. The public dashboard only monitors their live sessions; it must not expose an unauthenticated endpoint that spends model credits.
 - Machine-readable ASP declarations in JSON, validated by `ASPPolicy`.
 - Optional local AI Village store: SQLite, under `data/ai-village/village.sqlite`; `SWARMSENTINEL_DATA_DIR` can select another storage directory.
 - API contract: OpenAPI, with Orval-generated React client and Zod schemas.
-- Express/PostgreSQL/Drizzle packages belong to the starter workspace API, not the SwarmSentinel engine. SwarmSentinel's synthetic and live demos require neither `DATABASE_URL` nor an LLM API key.
+- Express/PostgreSQL/Drizzle packages belong to the starter workspace API, not the SwarmSentinel engine. Synthetic and scripted live demos require neither `DATABASE_URL` nor an LLM API key; real LLM agents use the configured Replit OpenAI integration.
 
 ## Product modes
 
@@ -85,6 +86,7 @@ Other commands:
 - `python artifacts/swarm-sentinel/python/simulator.py` — regenerate synthetic samples.
 - From `artifacts/swarm-sentinel/python`, `python examples/live_injection_demo.py` runs the local guard example; `--remote <engine-origin>` exercises HTTP interception.
 - From that same directory, `python examples/bench_latency.py` benchmarks cooperative guard overhead. Numbers from another machine are not measurements of Replit performance.
+- From the repository root, `python artifacts/swarm-sentinel/python/examples/real_agents_demo.py --mode normal` runs three real LLM-backed agents against the `agents` policy. Repeat with `--mode adversarial` for deliberate scope/contamination refusals. Open Live, select the labeled session, then Watch. Details: `docs/real-agent-showcase.md`.
 - Optional, **only after authorized local data is supplied**: from that same directory, `python -m village.ingest --raw ../../../download-hugginface`, then `python -m village.scan`. Do not run these as part of normal startup.
 
 API routes include `/api/swarm/health`, `/sources`, `/simulate`, `/sessions`, `/sessions/{id}`, `/sessions/{id}/evaluate`, `/sessions/{id}/stream`, and `/demo/injection` (all under `/api/swarm`). Interactive documentation is at `/api/swarm/docs`.
@@ -96,6 +98,7 @@ API routes include `/api/swarm/health`, `/sources`, `/simulate`, `/sessions`, `/
 - `artifacts/swarm-sentinel/python/policies/` — `mock.asp.json` and `ai-village.asp.json`.
 - `artifacts/swarm-sentinel/python/village/` — normalization, ingestion, episode scanning, and local storage.
 - `artifacts/swarm-sentinel/python/live.py`, `sdk/`, `demo.py`, `examples/` — live sessions, cooperative guard, attack demonstration, and benchmark.
+- `artifacts/swarm-sentinel/python/agents/` and `policies/agents.asp.json` — bounded real-model tool loops, working sandbox tools, and their separate policy. Outputs/transcripts in `data/agent-demos/` are gitignored.
 - `artifacts/swarm-sentinel/python/tests/test_engine.py` — hand-written fixtures, synthetic regression, policy/detector, injection, loop/budget, and live-guard tests.
 - `artifacts/swarm-sentinel/src/pages/dashboard.tsx` — synthetic, AI Village, and Live dashboard.
 - `lib/api-spec/openapi.yaml`, `lib/api-client-react/`, `lib/api-zod/` — API contract and generated clients.

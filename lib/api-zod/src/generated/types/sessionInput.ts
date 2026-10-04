@@ -11,4 +11,6 @@ export interface SessionInput {
   policy?: SessionInputPolicy;
   feedbackEnabled?: boolean;
   root?: string;
+  /** @maxLength 200 */
+  label?: string;
 }

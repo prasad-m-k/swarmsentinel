@@ -7,6 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "test:discovery": "node --test mockupPreviewPlugin.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
@@ -51,7 +52,6 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
-    "fast-glob": "^3.3.3",
     "framer-motion": "catalog:",
     "input-otp": "^1.5.0",
     "lucide-react": "catalog:",
