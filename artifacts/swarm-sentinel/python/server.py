@@ -99,7 +99,8 @@ def _village_events(settings):
     window = dict(dataset=info["dataset"], exportedAt=info["exportedAt"], citation=info["citation"],
                   start=start, end=end, truncated=truncated, episodeId=settings.episodeId,
                   day=pacific_day(start.replace("T", " ")[:26].split("+")[0]),
-                  regime="perma-computer-use" if start[:10] >= PERMA_COMPUTER_USE else "discrete-sessions")
+                  regime="perma-computer-use" if start[:10] >= PERMA_COMPUTER_USE else "discrete-sessions",
+                  textWithheld=bool(info.get("snapshot", {}).get("textWithheld")))
     return events, store.registry(db, end), window
 
 

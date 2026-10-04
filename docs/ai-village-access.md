@@ -51,6 +51,10 @@ GUI micro-actions (clicks, scrolls, screenshots, key presses) are counted but no
 - The 2026-03-24 perma-computer-use change and the 2026-02-10 auto-nudger change the shape of the data. Compare periods with the changelog open.
 - Heuristic alerts flag coordination worth reviewing. Collaboration the village was asked to do will trip them too.
 
+## Structure-only snapshots
+
+`python -m village.snapshot` writes a reduced copy for private hosting: top-ranked episodes only, intent text replaced by keyed word hashes with a discarded random key, shell commands reduced to the fragment an argument rule matched, fingerprints emptied. Replay results are unchanged. It is less revealing than the full store but still derived data under the same terms: private storage only, approved readers only (`SWARM_VILLAGE_READERS`), never published, and no wider audience without AI Digest's written permission.
+
 ## Sharing results
 
 Share aggregate findings, policy files and code. Do not publish raw rows, the SQLite store, or exported JSON traces from AI Village replays, since those contain dataset text. Cite AI Digest / AI Village and let the maintainers know about any publication.

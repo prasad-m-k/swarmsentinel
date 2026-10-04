@@ -819,8 +819,8 @@ export default function Dashboard() {
                     <div key={k} className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">{k}</span><span className="break-all" style={mono}>{v}</span></div>
                   ))}
                   <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">reason</span><span>{selected.reason}</span></div>
-                  <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">{isVillage ? 'narration' : 'intent'}</span><span>{selected.intent}{isVillage && <span className="text-muted-foreground"> (agent's own claim)</span>}</span></div>
-                  {selected.detail && <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">detail</span><pre className="whitespace-pre-wrap break-all text-[11px] max-h-40 overflow-y-auto" style={mono}>{selected.detail}</pre></div>}
+                  <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">{isVillage ? 'narration' : 'intent'}</span><span>{run?.window?.textWithheld ? <span className="text-muted-foreground">withheld in this structure-only snapshot</span> : <>{selected.intent}{isVillage && <span className="text-muted-foreground"> (agent's own claim)</span>}</>}</span></div>
+                  {selected.detail && !run?.window?.textWithheld && <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">detail</span><pre className="whitespace-pre-wrap break-all text-[11px] max-h-40 overflow-y-auto" style={mono}>{selected.detail}</pre></div>}
                   {!!selected.violations?.length && <div className="flex gap-2"><span className="w-24 shrink-0 text-muted-foreground">violations</span>
                     <span className="space-y-0.5">{selected.violations.map((v, i) => (
                       <span key={i} className="block" style={mono}>{v.directive}: {v.detail} {v.enforced ? '(enforced)' : '(reported)'}</span>

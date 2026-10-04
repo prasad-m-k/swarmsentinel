@@ -58,6 +58,16 @@ __pycache__/
 /download-hugginface/
 /data/ai-village/
 /data/agent-demos/
+/data/
+# Dataset stores, snapshots and raw tables anywhere in the tree, not only under data/
+*.sqlite
+*.sqlite.gz
+*.sqlite.sha256
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.jsonl.gz
+village-transcript.json
 
 # graphify knowledge-graph cache and outputs (local)
 /graphify-out/

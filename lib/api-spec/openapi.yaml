@@ -474,6 +474,7 @@ components:
         episodeId: { type: [string, "null"] }
         day: { type: string }
         regime: { type: string }
+        textWithheld: { type: boolean, description: "Structure-only snapshot: intent and command text replaced by keyed hashes" }
     RunSummary:
       type: object
       required: [decisions, blockedByRule, advisories, alertsByKind, agents, writes, contaminatedWrites, networkHosts, sharedResources]
