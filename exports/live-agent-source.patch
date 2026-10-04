@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 diff --git a/README.md b/README.md
 index 2bf9c212413d9752e895b5060d2503c9a4028c02..8a0f4d51c927a3ac875c8a005f50597740aa2488 100644
 --- a/README.md
@@ -5053,3 +5054,5 @@ index 1205eae1f1c4d63a0cb1eb08d3b76d46f44d93aa..a1757a5686e76d78a4b25a0bfbe748fd
  - An agent that bypasses the guard is not stopped. Cooperative interception is not an isolated security boundary.
  
  ## Run and verify on Replit
+=======
+>>>>>>> main
