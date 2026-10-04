@@ -2,6 +2,9 @@
 
 **A prototype implementation of ASP (Agent Security Policy): runtime policy enforcement and a multi-agent incident flight recorder.**
 
+## Short Into
+https://youtube.com/shorts/VFYxABGYEOw
+
 Built for the AI Swarm Dynamics Hackathon as an independent research prototype. Released under the [MIT License](LICENSE); read the [Disclaimer](DISCLAIMER.md) before relying on it for anything.
 
 SwarmSentinel is an **AI Swarm Dynamics Hackathon prototype** for investigating runaway coordination in multi-agent systems. It combines a policy gateway, graph-based tripwire detection, and an interactive forensic dashboard.
