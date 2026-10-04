@@ -1,6 +1,6 @@
 # SwarmSentinel
 
-**ASP-inspired runtime policies and a multi-agent incident flight recorder.**
+**A prototype implementation of ASP (Agent Security Policy): runtime policy enforcement and a multi-agent incident flight recorder.**
 
 Built for the AI Swarm Dynamics Hackathon as an independent research prototype. Released under the [MIT License](LICENSE); read the [Disclaimer](DISCLAIMER.md) before relying on it for anything.
 
