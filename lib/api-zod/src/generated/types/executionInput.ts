@@ -10,6 +10,13 @@ import type { ExecutionInputTool } from './executionInputTool';
 
 export interface ExecutionInput {
   /**
+     * Unique key for one logical execution. Reuse it only with the unchanged payload to recover a lost response.
+     * @minLength 1
+     * @maxLength 200
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  idempotencyKey: string;
+  /**
      * @minLength 1
      * @maxLength 120
      */

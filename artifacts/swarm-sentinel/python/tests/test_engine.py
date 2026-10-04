@@ -68,6 +68,8 @@ class PolicyEvaluation(unittest.TestCase):
         self.assertEqual((trace.decision, trace.rule, trace.executed), ("drop", "tools.deny_arguments", True))
         self.assertTrue(trace.reason.startswith("Would drop"))
         self.assertFalse(trace.violations[0].enforced)
+        for field in ("executionStatus", "toolBodyExecuted", "executionError"):
+            self.assertNotIn(field, trace.recorder_dump())
 
     def test_unknown_tool_and_network(self):
         gateway, _ = village_replay([village_event(1, "o3", "cc:TodoWrite"),

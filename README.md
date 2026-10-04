@@ -4,6 +4,8 @@
 
 SwarmSentinel is an **AI Swarm Dynamics Hackathon prototype** for investigating runaway coordination in multi-agent systems. It combines a policy gateway, graph-based tripwire detection, and an interactive forensic dashboard.
 
+Suggested follow-ups for the real implementation are tracked in [TODO.md](TODO.md); they are deferred beyond the PoC.
+
 It runs on two kinds of data:
 
 - **Synthetic scenarios** (normal and swarm attack) with mock tools, where the gateway enforces policy and tripwire feedback revokes agents.

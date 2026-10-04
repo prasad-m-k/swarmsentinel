@@ -4,6 +4,8 @@
 
 **Status:** ASP-inspired policy gateway and multi-agent flight recorder, with synthetic enforcement, optional AI Village historical replay, cooperative live interception, and a real LLM-backed agent showcase.
 
+**PoC scope:** Record suggested follow-ups in `TODO.md` for the real implementation rather than automatically expanding the PoC. Deferred TODOs do not authorize starting work; existing in-progress and queued work is unchanged.
+
 **ASP paper permission:** The project owner authored the ASP paper and has explicitly permitted its use freely in this project. This does not change the separate access and research-use restrictions on AI Village data.
 
 ## Source of truth and startup order
@@ -49,6 +51,7 @@
 - The dashboard's Live tab can attach to sessions or launch a paced poisoned-invoice demo, receive decisions via server-sent events, scrub the timeline, and fetch fresh reports/traces.
 - The demo executes local Python fixture tools, not external payment transactions.
 - Sessions are held in process memory, capped at 200, and serialized per session. Restarting the engine loses live sessions; do not claim durable storage.
+- Remote SDK caller-restart recovery is opt-in via `journal_path`; see `docs/caller-execution-recovery.md`. Private journal files retain exact requests and lineage, never credentials, and cannot recover sessions lost to an engine restart.
 - An agent that bypasses the guard is not stopped. Cooperative interception is not an isolated security boundary.
 
 ## Run and verify on Replit

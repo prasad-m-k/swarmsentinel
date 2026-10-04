@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CompletionWarning } from './completionWarning';
 import type { PolicyChange } from './policyChange';
 import type { ReplayWindow } from './replayWindow';
 import type { RunSummary } from './runSummary';
@@ -19,6 +20,16 @@ export interface SwarmRun {
   id: string;
   scenario: string;
   provenance: string;
+  /** Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays. */
+  executionEvidence?: boolean;
+  /**
+     * Owner-private only. Seconds since server admission before an unreported external completion is overdue.
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
+  /** Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement. */
+  completionWarnings?: CompletionWarning[];
   events: Trace[];
   alerts: SwarmAlert[];
   policies: PolicyChange[];

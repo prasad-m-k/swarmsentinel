@@ -37,10 +37,24 @@ export const SimulateSwarmBody = zod.object({
   "maxEvents": zod.number().int().min(simulateSwarmBodyMaxEventsMin).max(simulateSwarmBodyMaxEventsMax).default(simulateSwarmBodyMaxEventsDefault)
 })
 
+export const simulateSwarmResponseCompletionGraceSecondsMax = 86400;
+
+
+
 export const SimulateSwarmResponse = zod.object({
   "id": zod.string(),
   "scenario": zod.string(),
   "provenance": zod.string(),
+  "executionEvidence": zod.boolean().optional().describe('Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays.'),
+  "completionGraceSeconds": zod.number().int().min(1).max(simulateSwarmResponseCompletionGraceSecondsMax).optional().describe('Owner-private only. Seconds since server admission before an unreported external completion is overdue.'),
+  "completionWarnings": zod.array(zod.object({
+  "kind": zod.enum(['missing-completion']),
+  "eventId": zod.string(),
+  "agentId": zod.string(),
+  "spanId": zod.string(),
+  "target": zod.string(),
+  "admittedAt": zod.coerce.date().describe('Server admission time')
+})).optional().describe('Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement.'),
   "events": zod.array(zod.object({
   "id": zod.string(),
   "timestamp": zod.string(),
@@ -57,7 +71,11 @@ export const SimulateSwarmResponse = zod.object({
   "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
   "rule": zod.string(),
   "reason": zod.string(),
-  "executed": zod.boolean(),
+  "executed": zod.boolean().describe('Legacy gateway admission flag; in Live this is authorization, not proof of tool success.'),
+  "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
+  "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
+  "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
   "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
@@ -188,20 +206,29 @@ export const createSwarmSessionBodyRootDefault = `orchestrator`;
 export const createSwarmSessionBodyLabelDefault = ``;
 export const createSwarmSessionBodyLabelMax = 200;
 
+export const createSwarmSessionBodyCompletionGraceSecondsDefault = 60;
+export const createSwarmSessionBodyCompletionGraceSecondsMax = 86400;
+
 
 
 export const CreateSwarmSessionBody = zod.object({
   "policy": zod.enum(['mock', 'ai-village', 'agents']).default(createSwarmSessionBodyPolicyDefault),
   "feedbackEnabled": zod.boolean().default(createSwarmSessionBodyFeedbackEnabledDefault),
   "root": zod.string().default(createSwarmSessionBodyRootDefault),
-  "label": zod.string().max(createSwarmSessionBodyLabelMax).default(createSwarmSessionBodyLabelDefault)
+  "label": zod.string().max(createSwarmSessionBodyLabelMax).default(createSwarmSessionBodyLabelDefault),
+  "completionGraceSeconds": zod.number().int().min(1).max(createSwarmSessionBodyCompletionGraceSecondsMax).default(createSwarmSessionBodyCompletionGraceSecondsDefault).describe('Server-admission grace period for missing external completion receipts. Visibility only; not a tool timeout or retry deadline.')
 })
+
+export const createSwarmSessionResponseCompletionGraceSecondsMax = 86400;
+
+
 
 export const CreateSwarmSessionResponse = zod.object({
   "sessionId": zod.string(),
   "policyName": zod.string(),
   "root": zod.string(),
   "feedbackEnabled": zod.boolean(),
+  "completionGraceSeconds": zod.number().int().min(1).max(createSwarmSessionResponseCompletionGraceSecondsMax).optional(),
   "policy": zod.record(zod.string(), zod.unknown())
 })
 
@@ -301,13 +328,17 @@ export const GetSwarmSandboxResponse = zod.object({
 
 
 /**
- * Enforcement metadata is server-owned. A denied decision never reaches a tool body. No caller-supplied decision, path, trust label or credential is accepted.
+ * Enforcement metadata is server-owned. A denied decision never reaches a tool body. A required idempotencyKey is scoped to this disposable session and bound to the full execution payload (actor, lineage, tool and exact arguments). An exact replay returns the original outcome, including refusals and failures, without reevaluation or dispatch. A changed payload with the same key is refused. New keys always receive fresh ASP checks. Authentication and ownership are checked on every request, including replays. Keys and outcomes last for the session lifetime only; no recovery across process restarts is promised. No caller-supplied decision, path, trust label or credential is accepted.
  * @summary Evaluate and execute a registered sandbox tool under one session lock
  */
 export const ExecuteSwarmToolParams = zod.object({
   "sessionId": zod.coerce.string()
 })
 
+export const executeSwarmToolBodyIdempotencyKeyMax = 200;
+
+
+export const executeSwarmToolBodyIdempotencyKeyRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
 export const executeSwarmToolBodyAgentIdMax = 120;
 
 export const executeSwarmToolBodySpanIdMax = 200;
@@ -321,6 +352,7 @@ export const executeSwarmToolBodyParentSpanIdMax = 200;
 
 
 export const ExecuteSwarmToolBody = zod.object({
+  "idempotencyKey": zod.string().min(1).max(executeSwarmToolBodyIdempotencyKeyMax).regex(executeSwarmToolBodyIdempotencyKeyRegExp).describe('Unique key for one logical execution. Reuse it only with the unchanged payload to recover a lost response.'),
   "agentId": zod.string().min(1).max(executeSwarmToolBodyAgentIdMax),
   "spanId": zod.string().min(1).max(executeSwarmToolBodySpanIdMax),
   "parentId": zod.string().max(executeSwarmToolBodyParentIdMax).default(executeSwarmToolBodyParentIdDefault),
@@ -332,6 +364,7 @@ export const ExecuteSwarmToolBody = zod.object({
 export const ExecuteSwarmToolResponse = zod.object({
   "decision": zod.object({
   "eventId": zod.string(),
+  "completionToken": zod.string().optional().describe('Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs.'),
   "allowed": zod.boolean(),
   "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
   "rule": zod.string(),
@@ -364,6 +397,74 @@ export const ExecuteSwarmToolResponse = zod.object({
 
 
 /**
+ * The owner must supply the session-bound completionToken returned by evaluate and the exact event, actor and span. Only one terminal receipt is accepted. Refused calls, non-tools, sandbox executions, and duplicate or contradictory receipts cannot be updated. No results or error text are accepted. This is caller-reported evidence, not engine observation or proof of side effects.
+ * @summary Record caller-reported completion of an allowed permission-only tool
+ */
+export const CompleteSwarmToolParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const completeSwarmToolBodyEventIdMax = 200;
+
+export const completeSwarmToolBodyCompletionTokenRegExp = new RegExp('^[a-f0-9]{32}$');
+export const completeSwarmToolBodyAgentIdMax = 120;
+
+export const completeSwarmToolBodySpanIdMax = 200;
+
+
+
+export const CompleteSwarmToolBody = zod.object({
+  "eventId": zod.string().min(1).max(completeSwarmToolBodyEventIdMax),
+  "completionToken": zod.string().regex(completeSwarmToolBodyCompletionTokenRegExp),
+  "agentId": zod.string().min(1).max(completeSwarmToolBodyAgentIdMax),
+  "spanId": zod.string().min(1).max(completeSwarmToolBodySpanIdMax),
+  "executionStatus": zod.enum(['succeeded', 'failed'])
+})
+
+export const CompleteSwarmToolResponse = zod.object({
+  "id": zod.string(),
+  "timestamp": zod.string(),
+  "agentId": zod.string(),
+  "parentId": zod.string(),
+  "spanId": zod.string(),
+  "parentSpanId": zod.string(),
+  "action": zod.enum(['spawn', 'tool', 'message', 'wiki_edit']),
+  "channel": zod.enum(['in_band', 'out_of_band']),
+  "target": zod.string(),
+  "intent": zod.string(),
+  "intentVector": zod.array(zod.number()),
+  "depth": zod.number().int(),
+  "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
+  "rule": zod.string(),
+  "reason": zod.string(),
+  "executed": zod.boolean().describe('Legacy gateway admission flag; in Live this is authorization, not proof of tool success.'),
+  "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
+  "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
+  "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
+  "policyVersion": zod.number().int(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
+  "detail": zod.string().optional(),
+  "network": zod.string().optional(),
+  "reads": zod.enum(['', 'high', 'medium', 'low', 'untrusted']).optional(),
+  "write": zod.boolean().nullish(),
+  "resource": zod.string().optional(),
+  "mentions": zod.array(zod.string()).optional(),
+  "mode": zod.enum(['enforce', 'report-only']).optional(),
+  "violations": zod.array(zod.object({
+  "directive": zod.string(),
+  "attempted_action": zod.string(),
+  "detail": zod.string().optional(),
+  "enforced": zod.boolean()
+})).optional(),
+  "contaminated": zod.boolean().optional(),
+  "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
+})
+
+
+/**
  * @summary Decide one proposed agent action before it executes
  */
 export const EvaluateSwarmCallParams = zod.object({
@@ -390,6 +491,7 @@ export const EvaluateSwarmCallBody = zod.object({
 
 export const EvaluateSwarmCallResponse = zod.object({
   "eventId": zod.string(),
+  "completionToken": zod.string().optional().describe('Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs.'),
   "allowed": zod.boolean(),
   "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
   "rule": zod.string(),
@@ -421,10 +523,24 @@ export const GetSwarmSessionParams = zod.object({
   "sessionId": zod.coerce.string()
 })
 
+export const getSwarmSessionResponseCompletionGraceSecondsMax = 86400;
+
+
+
 export const GetSwarmSessionResponse = zod.object({
   "id": zod.string(),
   "scenario": zod.string(),
   "provenance": zod.string(),
+  "executionEvidence": zod.boolean().optional().describe('Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays.'),
+  "completionGraceSeconds": zod.number().int().min(1).max(getSwarmSessionResponseCompletionGraceSecondsMax).optional().describe('Owner-private only. Seconds since server admission before an unreported external completion is overdue.'),
+  "completionWarnings": zod.array(zod.object({
+  "kind": zod.enum(['missing-completion']),
+  "eventId": zod.string(),
+  "agentId": zod.string(),
+  "spanId": zod.string(),
+  "target": zod.string(),
+  "admittedAt": zod.coerce.date().describe('Server admission time')
+})).optional().describe('Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement.'),
   "events": zod.array(zod.object({
   "id": zod.string(),
   "timestamp": zod.string(),
@@ -441,7 +557,11 @@ export const GetSwarmSessionResponse = zod.object({
   "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
   "rule": zod.string(),
   "reason": zod.string(),
-  "executed": zod.boolean(),
+  "executed": zod.boolean().describe('Legacy gateway admission flag; in Live this is authorization, not proof of tool success.'),
+  "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
+  "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
+  "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
   "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
@@ -548,10 +668,24 @@ export const GetSwarmDemoSessionParams = zod.object({
   "sessionId": zod.coerce.string()
 })
 
+export const getSwarmDemoSessionResponseCompletionGraceSecondsMax = 86400;
+
+
+
 export const GetSwarmDemoSessionResponse = zod.object({
   "id": zod.string(),
   "scenario": zod.string(),
   "provenance": zod.string(),
+  "executionEvidence": zod.boolean().optional().describe('Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays.'),
+  "completionGraceSeconds": zod.number().int().min(1).max(getSwarmDemoSessionResponseCompletionGraceSecondsMax).optional().describe('Owner-private only. Seconds since server admission before an unreported external completion is overdue.'),
+  "completionWarnings": zod.array(zod.object({
+  "kind": zod.enum(['missing-completion']),
+  "eventId": zod.string(),
+  "agentId": zod.string(),
+  "spanId": zod.string(),
+  "target": zod.string(),
+  "admittedAt": zod.coerce.date().describe('Server admission time')
+})).optional().describe('Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement.'),
   "events": zod.array(zod.object({
   "id": zod.string(),
   "timestamp": zod.string(),
@@ -568,7 +702,11 @@ export const GetSwarmDemoSessionResponse = zod.object({
   "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
   "rule": zod.string(),
   "reason": zod.string(),
-  "executed": zod.boolean(),
+  "executed": zod.boolean().describe('Legacy gateway admission flag; in Live this is authorization, not proof of tool success.'),
+  "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
+  "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
+  "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
   "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),

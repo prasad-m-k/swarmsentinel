@@ -14,6 +14,7 @@ class SandboxInput(BaseModel):
 
 class ExecutionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    idempotencyKey: str = Field(min_length=1, max_length=200, strict=True, pattern=r"^[A-Za-z0-9._:-]+$")
     agentId: str = Field(min_length=1, max_length=120)
     spanId: str = Field(min_length=1, max_length=200)
     parentId: str = Field(default="", max_length=120)

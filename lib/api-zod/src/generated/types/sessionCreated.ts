@@ -12,5 +12,10 @@ export interface SessionCreated {
   policyName: string;
   root: string;
   feedbackEnabled: boolean;
+  /**
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
   policy: SessionCreatedPolicy;
 }

@@ -1,0 +1,66 @@
+<<<<<<< HEAD
+{
+  "repository": "https://github.com/prasad-m-k/swarmsentinel",
+  "branch": "live-agent",
+  "base_commit": "884c1e8a78f42a62f62d9f661500f961b2faa067",
+  "source_snapshot": "6d5df6b741669a2731109d5717f5e29b084fed5c",
+  "source_tree": "dff17172425b3467048111029a07a93033d03779",
+  "patch_file": "exports/live-agent-source.patch",
+  "patch_sha256": "c22a52a8049142f137bdfa1912496541bd5350b3ec5eb51105aa5cded863aecc",
+  "additional_commit_files": [
+    "exports/live-agent-source.patch",
+    "exports/live-agent-source-manifest.json"
+  ],
+  "changed_files": [
+    "README.md",
+    "TODO.md",
+    "artifacts/swarm-sentinel/README.md",
+    "artifacts/swarm-sentinel/python/live.py",
+    "artifacts/swarm-sentinel/python/models.py",
+    "artifacts/swarm-sentinel/python/reporter.py",
+    "artifacts/swarm-sentinel/python/sandbox.py",
+    "artifacts/swarm-sentinel/python/sdk/_windows_journal.py",
+    "artifacts/swarm-sentinel/python/sdk/guard.py",
+    "artifacts/swarm-sentinel/python/sdk/journal.py",
+    "artifacts/swarm-sentinel/python/server.py",
+    "artifacts/swarm-sentinel/python/tests/test_completion.py",
+    "artifacts/swarm-sentinel/python/tests/test_engine.py",
+    "artifacts/swarm-sentinel/python/tests/test_execution.py",
+    "artifacts/swarm-sentinel/python/tests/test_journal.py",
+    "artifacts/swarm-sentinel/python/tests/test_missing_completion.py",
+    "artifacts/swarm-sentinel/src/lib/live-events.ts",
+    "artifacts/swarm-sentinel/src/pages/dashboard.tsx",
+    "artifacts/swarm-sentinel/tests/live-events.test.ts",
+    "docs/THREAT_MODEL.md",
+    "docs/caller-execution-recovery.md",
+    "docs/cooperative-completion.md",
+    "docs/real-agent-showcase.md",
+    "lib/api-client-react/src/generated/api.schemas.ts",
+    "lib/api-client-react/src/generated/api.ts",
+    "lib/api-spec/openapi.yaml",
+    "lib/api-zod/src/generated/api.ts",
+    "lib/api-zod/src/generated/types/callDecision.ts",
+    "lib/api-zod/src/generated/types/completionReceipt.ts",
+    "lib/api-zod/src/generated/types/completionReceiptExecutionStatus.ts",
+    "lib/api-zod/src/generated/types/completionWarning.ts",
+    "lib/api-zod/src/generated/types/completionWarningKind.ts",
+    "lib/api-zod/src/generated/types/executionInput.ts",
+    "lib/api-zod/src/generated/types/index.ts",
+    "lib/api-zod/src/generated/types/sessionCreated.ts",
+    "lib/api-zod/src/generated/types/sessionInput.ts",
+    "lib/api-zod/src/generated/types/sessionStreamMessage.ts",
+    "lib/api-zod/src/generated/types/swarmRun.ts",
+    "lib/api-zod/src/generated/types/trace.ts",
+    "lib/api-zod/src/generated/types/traceExecutionError.ts",
+    "lib/api-zod/src/generated/types/traceExecutionProvenance.ts",
+    "lib/api-zod/src/generated/types/traceExecutionStatus.ts",
+    "replit.md"
+  ],
+  "excluded_categories": [
+    "Private workspace metadata and uploaded assets",
+    "Source-transfer patches and manifests are excluded from the patch itself and committed separately alongside the source changes",
+    "Replit-only signing-tool configuration"
+  ]
+}
+=======
+>>>>>>> main
