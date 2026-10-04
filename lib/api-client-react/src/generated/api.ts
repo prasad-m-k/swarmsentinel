@@ -22,6 +22,7 @@ import type {
 import type {
   CallDecision,
   CallInput,
+  CompletionReceipt,
   DemoInput,
   ExecutionInput,
   HealthStatus,
@@ -36,7 +37,8 @@ import type {
   StreamSwarmSessionParams,
   SwarmRun,
   SwarmSources,
-  ToolOutcome
+  ToolOutcome,
+  Trace
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -750,7 +752,7 @@ export const getExecuteSwarmToolUrl = (sessionId: string,) => {
 }
 
 /**
- * Enforcement metadata is server-owned. A denied decision never reaches a tool body. No caller-supplied decision, path, trust label or credential is accepted.
+ * Enforcement metadata is server-owned. A denied decision never reaches a tool body. A required idempotencyKey is scoped to this disposable session and bound to the full execution payload (actor, lineage, tool and exact arguments). An exact replay returns the original outcome, including refusals and failures, without reevaluation or dispatch. A changed payload with the same key is refused. New keys always receive fresh ASP checks. Authentication and ownership are checked on every request, including replays. Keys and outcomes last for the session lifetime only; no recovery across process restarts is promised. No caller-supplied decision, path, trust label or credential is accepted.
  * @summary Evaluate and execute a registered sandbox tool under one session lock
  */
 export const executeSwarmTool = async (sessionId: string,
@@ -829,6 +831,96 @@ export const useExecuteSwarmTool = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getExecuteSwarmToolMutationOptions(options));
+    }
+
+export const getCompleteSwarmToolUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}/completion`
+}
+
+/**
+ * The owner must supply the session-bound completionToken returned by evaluate and the exact event, actor and span. Only one terminal receipt is accepted. Refused calls, non-tools, sandbox executions, and duplicate or contradictory receipts cannot be updated. No results or error text are accepted. This is caller-reported evidence, not engine observation or proof of side effects.
+ * @summary Record caller-reported completion of an allowed permission-only tool
+ */
+export const completeSwarmTool = async (sessionId: string,
+    completionReceipt: CompletionReceipt, options?: Parameters<typeof customFetch>[1]): Promise<Trace> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Trace>(getCompleteSwarmToolUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(completionReceipt)
+  }
+);}
+
+
+
+
+
+export const getCompleteSwarmToolMutationKey = () => ['completeSwarmTool'] as const;
+
+export const getCompleteSwarmToolMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeSwarmTool>>, TError,CompleteSwarmToolMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof completeSwarmTool>>, TError,CompleteSwarmToolMutationVariables, TContext> => {
+
+const mutationKey = getCompleteSwarmToolMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof completeSwarmTool>>, CompleteSwarmToolMutationVariables> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  completeSwarmTool(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CompleteSwarmToolMutationResult = NonNullable<Awaited<ReturnType<typeof completeSwarmTool>>>
+    export type CompleteSwarmToolMutationBody = BodyType<CompletionReceipt>
+    export type CompleteSwarmToolMutationError = ErrorType<void>
+    export type CompleteSwarmToolMutationVariables = {sessionId: string;data: BodyType<CompletionReceipt>}
+
+    /**
+ * @summary Record caller-reported completion of an allowed permission-only tool
+ */
+export const useCompleteSwarmTool = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof completeSwarmTool>>, TError,CompleteSwarmToolMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof completeSwarmTool>>,
+        TError,
+        CompleteSwarmToolMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCompleteSwarmToolMutationOptions(options));
     }
 
 export const getEvaluateSwarmCallUrl = (sessionId: string,) => {

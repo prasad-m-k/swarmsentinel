@@ -168,7 +168,15 @@ paths:
       operationId: executeSwarmTool
       tags: [swarm]
       summary: Evaluate and execute a registered sandbox tool under one session lock
-      description: Enforcement metadata is server-owned. A denied decision never reaches a tool body. No caller-supplied decision, path, trust label or credential is accepted.
+      description: >-
+        Enforcement metadata is server-owned. A denied decision never reaches a tool body.
+        A required idempotencyKey is scoped to this disposable session and bound to the full
+        execution payload (actor, lineage, tool and exact arguments). An exact replay returns
+        the original outcome, including refusals and failures, without reevaluation or dispatch.
+        A changed payload with the same key is refused. New keys always receive fresh ASP checks.
+        Authentication and ownership are checked on every request, including replays.
+        Keys and outcomes last for the session lifetime only; no recovery across process restarts
+        is promised. No caller-supplied decision, path, trust label or credential is accepted.
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -185,8 +193,39 @@ paths:
         "401": { description: Authentication required or expired }
         "403": { description: Untrusted cookie mutation origin }
         "404": { description: Unknown or expired session }
-        "409": { description: Sandbox is not initialized }
+        "409": { description: "Sandbox unavailable, idempotency key payload conflict or interrupted execution with unavailable outcome" }
         "422": { description: "Unknown tool, invalid arguments or caller-supplied enforcement metadata" }
+        "503": { description: Authentication unavailable or not configured }
+  /swarm/sessions/{sessionId}/completion:
+    post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: completeSwarmTool
+      tags: [swarm]
+      summary: Record caller-reported completion of an allowed permission-only tool
+      description: >-
+        The owner must supply the session-bound completionToken returned by evaluate
+        and the exact event, actor and span. Only one terminal receipt is accepted.
+        Refused calls, non-tools, sandbox executions, and duplicate or contradictory
+        receipts cannot be updated. No results or error text are accepted.
+        This is caller-reported evidence, not engine observation or proof of side effects.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompletionReceipt" }
+      responses:
+        "200":
+          description: Updated existing recorder row
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trace" }
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "404": { description: Unknown session or event }
+        "409": { description: "Ineligible, mismatched, duplicate or contradictory receipt" }
+        "422": { description: Invalid receipt }
         "503": { description: Authentication unavailable or not configured }
   /swarm/sessions/{sessionId}/evaluate:
     post:
@@ -341,7 +380,11 @@ components:
         decision: { type: string, enum: [allow, throttle, drop, observed] }
         rule: { type: string }
         reason: { type: string }
-        executed: { type: boolean }
+        executed: { type: boolean, description: "Legacy gateway admission flag; in Live this is authorization, not proof of tool success." }
+        executionStatus: { type: string, enum: [not-started, succeeded, failed], description: "Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization." }
+        toolBodyExecuted: { type: boolean, description: "Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects." }
+        executionError: { type: string, enum: [tool_execution_failed], description: "Fixed safe error code only; no exception details or tool results." }
+        executionProvenance: { type: string, enum: [engine-observed, caller-reported], description: "Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows." }
         policyVersion: { type: integer }
         source: { type: string, enum: [synthetic, ai-village, live] }
         sourceRef: { type: string, description: "table:row-id in the source dataset" }
@@ -389,6 +432,9 @@ components:
         id: { type: string }
         scenario: { type: string }
         provenance: { type: string }
+        executionEvidence: { type: boolean, description: "Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays." }
+        completionGraceSeconds: { type: integer, minimum: 1, maximum: 86400, description: "Owner-private only. Seconds since server admission before an unreported external completion is overdue." }
+        completionWarnings: { type: array, items: { $ref: "#/components/schemas/CompletionWarning" }, description: "Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement." }
         events: { type: array, items: { $ref: "#/components/schemas/Trace" } }
         alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
         policies: { type: array, items: { $ref: "#/components/schemas/PolicyChange" } }
@@ -483,8 +529,14 @@ components:
     ExecutionInput:
       type: object
       additionalProperties: false
-      required: [agentId, spanId, tool]
+      required: [idempotencyKey, agentId, spanId, tool]
       properties:
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[A-Za-z0-9._:-]+$'
+          description: Unique key for one logical execution. Reuse it only with the unchanged payload to recover a lost response.
         agentId: { type: string, minLength: 1, maxLength: 120 }
         spanId: { type: string, minLength: 1, maxLength: 200 }
         parentId: { type: string, maxLength: 120, default: "" }
@@ -541,6 +593,17 @@ components:
         feedbackEnabled: { type: boolean, default: true }
         root: { type: string, default: orchestrator }
         label: { type: string, maxLength: 200, default: "" }
+        completionGraceSeconds: { type: integer, minimum: 1, maximum: 86400, default: 60, description: "Server-admission grace period for missing external completion receipts. Visibility only; not a tool timeout or retry deadline." }
+    CompletionWarning:
+      type: object
+      required: [kind, eventId, agentId, spanId, target, admittedAt]
+      properties:
+        kind: { type: string, enum: [missing-completion] }
+        eventId: { type: string }
+        agentId: { type: string }
+        spanId: { type: string }
+        target: { type: string }
+        admittedAt: { type: string, format: date-time, description: Server admission time, not the caller's event timestamp }
     SessionSummary:
       type: object
       required: [sessionId, created, policyName, root, label, events, alerts]
@@ -557,6 +620,8 @@ components:
       required: [events, alerts, policies, total]
       properties:
         events: { type: array, items: { $ref: "#/components/schemas/Trace" } }
+        updates: { type: array, items: { $ref: "#/components/schemas/Trace" }, description: "Replace existing rows by id; never append these or increment action counts. Existing evidence is resent on subscription to close snapshot races." }
+        completionWarnings: { type: array, items: { $ref: "#/components/schemas/CompletionWarning" }, description: "Owner-private only. Full replacement of overdue receipt warnings, including an empty array when resolved. Sent on subscription and changes without requiring new actions; not detections or execution outcomes." }
         alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
         policies: { type: array, items: { $ref: "#/components/schemas/PolicyChange" } }
         total: { type: integer }
@@ -574,6 +639,7 @@ components:
         policyName: { type: string }
         root: { type: string }
         feedbackEnabled: { type: boolean }
+        completionGraceSeconds: { type: integer, minimum: 1, maximum: 86400 }
         policy: { type: object, additionalProperties: true }
     CallInput:
       type: object
@@ -599,6 +665,7 @@ components:
       required: [eventId, allowed, decision, rule, reason, policyVersion, taintOrigin, violations, alerts, evaluationMs]
       properties:
         eventId: { type: string }
+        completionToken: { type: string, description: "Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs." }
         allowed: { type: boolean }
         decision: { type: string, enum: [allow, throttle, drop, observed] }
         rule: { type: string }
@@ -608,6 +675,16 @@ components:
         violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
         alerts: { type: array, items: { $ref: "#/components/schemas/SwarmAlert" } }
         evaluationMs: { type: number }
+    CompletionReceipt:
+      type: object
+      additionalProperties: false
+      required: [eventId, completionToken, agentId, spanId, executionStatus]
+      properties:
+        eventId: { type: string, minLength: 1, maxLength: 200 }
+        completionToken: { type: string, pattern: "^[a-f0-9]{32}$" }
+        agentId: { type: string, minLength: 1, maxLength: 120 }
+        spanId: { type: string, minLength: 1, maxLength: 200 }
+        executionStatus: { type: string, enum: [succeeded, failed] }
     HealthStatus:
       type: object
       properties:

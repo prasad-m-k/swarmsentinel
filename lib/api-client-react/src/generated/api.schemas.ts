@@ -77,6 +77,39 @@ export const TraceDecision = {
   observed: 'observed',
 } as const;
 
+/**
+ * Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.
+ */
+export type TraceExecutionStatus = typeof TraceExecutionStatus[keyof typeof TraceExecutionStatus];
+
+
+export const TraceExecutionStatus = {
+  'not-started': 'not-started',
+  succeeded: 'succeeded',
+  failed: 'failed',
+} as const;
+
+/**
+ * Fixed safe error code only; no exception details or tool results.
+ */
+export type TraceExecutionError = typeof TraceExecutionError[keyof typeof TraceExecutionError];
+
+
+export const TraceExecutionError = {
+  tool_execution_failed: 'tool_execution_failed',
+} as const;
+
+/**
+ * Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.
+ */
+export type TraceExecutionProvenance = typeof TraceExecutionProvenance[keyof typeof TraceExecutionProvenance];
+
+
+export const TraceExecutionProvenance = {
+  'engine-observed': 'engine-observed',
+  'caller-reported': 'caller-reported',
+} as const;
+
 export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
 
 
@@ -128,7 +161,16 @@ export interface Trace {
   decision: TraceDecision;
   rule: string;
   reason: string;
+  /** Legacy gateway admission flag; in Live this is authorization, not proof of tool success. */
   executed: boolean;
+  /** Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization. */
+  executionStatus?: TraceExecutionStatus;
+  /** Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects. */
+  toolBodyExecuted?: boolean;
+  /** Fixed safe error code only; no exception details or tool results. */
+  executionError?: TraceExecutionError;
+  /** Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows. */
+  executionProvenance?: TraceExecutionProvenance;
   policyVersion: number;
   source?: TraceSource;
   /** table:row-id in the source dataset */
@@ -183,6 +225,23 @@ export const SwarmRunMode = {
 } as const;
 
 export type SwarmRunPolicy = { [key: string]: unknown };
+
+export type CompletionWarningKind = typeof CompletionWarningKind[keyof typeof CompletionWarningKind];
+
+
+export const CompletionWarningKind = {
+  'missing-completion': 'missing-completion',
+} as const;
+
+export interface CompletionWarning {
+  kind: CompletionWarningKind;
+  eventId: string;
+  agentId: string;
+  spanId: string;
+  target: string;
+  /** Server admission time */
+  admittedAt: string;
+}
 
 export interface ReplayWindow {
   dataset: string;
@@ -241,6 +300,16 @@ export interface SwarmRun {
   id: string;
   scenario: string;
   provenance: string;
+  /** Owner-private Live separates authorization, engine-observed outcomes and caller-reported receipts. Absent for synthetic demos and historical replays. */
+  executionEvidence?: boolean;
+  /**
+     * Owner-private only. Seconds since server admission before an unreported external completion is overdue.
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
+  /** Owner-private visibility only. Missing receipts do not establish body entry, failure, rollback or retry safety; separate from detections and enforcement. */
+  completionWarnings?: CompletionWarning[];
   events: Trace[];
   alerts: SwarmAlert[];
   policies: PolicyChange[];
@@ -325,6 +394,13 @@ export type ExecutionInputArguments = { [key: string]: unknown };
 
 export interface ExecutionInput {
   /**
+     * Unique key for one logical execution. Reuse it only with the unchanged payload to recover a lost response.
+     * @minLength 1
+     * @maxLength 200
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  idempotencyKey: string;
+  /**
      * @minLength 1
      * @maxLength 120
      */
@@ -394,6 +470,8 @@ export const CallDecisionDecision = {
 
 export interface CallDecision {
   eventId: string;
+  /** Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs. */
+  completionToken?: string;
   allowed: boolean;
   decision: CallDecisionDecision;
   rule: string;
@@ -430,6 +508,12 @@ export interface SessionInput {
   root?: string;
   /** @maxLength 200 */
   label?: string;
+  /**
+     * Server-admission grace period for missing external completion receipts. Visibility only; not a tool timeout or retry deadline.
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
 }
 
 export interface SessionSummary {
@@ -444,6 +528,10 @@ export interface SessionSummary {
 
 export interface SessionStreamMessage {
   events: Trace[];
+  /** Replace existing rows by id; never append these or increment action counts. Existing evidence is resent on subscription to close snapshot races. */
+  updates?: Trace[];
+  /** Owner-private only. Full replacement of overdue receipt warnings, including an empty array when resolved. Sent on subscription and changes without requiring new actions; not detections or execution outcomes. */
+  completionWarnings?: CompletionWarning[];
   alerts: SwarmAlert[];
   policies: PolicyChange[];
   total: number;
@@ -465,6 +553,11 @@ export interface SessionCreated {
   policyName: string;
   root: string;
   feedbackEnabled: boolean;
+  /**
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
   policy: SessionCreatedPolicy;
 }
 
@@ -506,6 +599,35 @@ export interface CallInput {
   scope?: string[];
   /** @nullable */
   timestamp?: string | null;
+}
+
+export type CompletionReceiptExecutionStatus = typeof CompletionReceiptExecutionStatus[keyof typeof CompletionReceiptExecutionStatus];
+
+
+export const CompletionReceiptExecutionStatus = {
+  succeeded: 'succeeded',
+  failed: 'failed',
+} as const;
+
+export interface CompletionReceipt {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  eventId: string;
+  /** @pattern ^[a-f0-9]{32}$ */
+  completionToken: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  agentId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  spanId: string;
+  executionStatus: CompletionReceiptExecutionStatus;
 }
 
 export interface HealthStatus {

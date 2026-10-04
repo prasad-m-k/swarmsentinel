@@ -3,6 +3,8 @@ import { createSwarmSession, deleteSwarmSession, getSwarmSession, getSwarmDemoSe
 import { useClerk, useUser } from '@clerk/react';
 import { Link } from 'wouter';
 import RealAgentGuide from '@/components/real-agent-guide';
+import { canReconnectLive, countToolEvidence, matchesToolEvidence, mergeLiveEvents } from '@/lib/live-events';
+import type { OutcomeFilter, ProvenanceFilter } from '@/lib/live-events';
 import type { Episode, RunInput, SessionStreamMessage, SessionSummary, SwarmRun, Trace } from '@workspace/api-client-react';
 import {
   Play, Pause, StepForward, RotateCcw, Download, ShieldAlert, ExternalLink,
@@ -141,6 +143,7 @@ export default function Dashboard() {
   const { signOut } = useClerk();
   const [liveScope, setLiveScope] = useState<'demo' | 'private'>('demo');
   const [liveError, setLiveError] = useState('');
+  const [completionGrace, setCompletionGrace] = useState(60);
   const sim = useSimulateSwarm();
   const sources = useGetSwarmSources();
   const village = sources.data?.aiVillage;
@@ -174,6 +177,8 @@ export default function Dashboard() {
   const [fDec, setFDec] = useState('all');
   const [fAct, setFAct] = useState('all');
   const [fCh, setFCh] = useState('all');
+  const [fProvenance, setFProvenance] = useState<ProvenanceFilter>('all');
+  const [fOutcome, setFOutcome] = useState<OutcomeFilter>('all');
   const [fAgent, setFAgent] = useState<string | null>(null);
   const [selEvent, setSelEvent] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -213,6 +218,12 @@ export default function Dashboard() {
   const [liveSessions, setLiveSessions] = useState<SessionSummary[]>([]);
   const [liveId, setLiveId] = useState('');
   const [liveStatus, setLiveStatus] = useState<LiveStatus>('idle');
+  const resetFilters = () => {
+    setFDec('all'); setFAct('all'); setFCh('all'); setFAgent(null);
+    setFProvenance('all'); setFOutcome('all'); setSelEvent(null);
+  };
+  // A reconnect to the same session retains filters; a different context does not.
+  useEffect(() => { resetFilters(); }, [liveId, run?.id, user?.id, liveScope, scenario]);
   const stream = useRef<EventSource | null>(null);
   const generation = useRef(0);
   const reconnect = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -223,6 +234,14 @@ export default function Dashboard() {
     if (reconnect.current) clearTimeout(reconnect.current);
   };
   const snapshot = (id: string) => liveScope === 'demo' ? getSwarmDemoSession(id) : getSwarmSession(id);
+  const previousOwner = useRef(user?.id);
+  useEffect(() => {
+    if (previousOwner.current === user?.id) return;
+    previousOwner.current = user?.id;
+    stopWatch(); setPlaying(false); setRun(null); setCursor(0);
+    setLiveId(''); setLiveSessions([]); setLiveError(''); setLiveStatus('idle');
+    linkedSession.current = '';
+  }, [user?.id]);
   const showError = (error: unknown) => {
     const status = (error as { status?: number })?.status;
     if (status === 401 || status === 404) {
@@ -246,15 +265,16 @@ export default function Dashboard() {
     load();
     const t = setInterval(load, 3000);
     return () => { alive = false; clearInterval(t); };
-  }, [scenario, liveScope]);
+  }, [scenario, liveScope, user?.id]);
 
   useEffect(() => () => stopWatch(), []);
 
-  const watch = async (id: string) => {
+  const watch = async (id: string, reconnecting = false) => {
     stopWatch();
     const current = generation.current;
     setLiveError('');
-    setPlaying(false); setSelEvent(null); setFAgent(null);
+    setPlaying(false);
+    if (!reconnecting) { setSelEvent(null); setFAgent(null); }
     setLiveStatus('connecting');
     try {
       const snap = await snapshot(id);
@@ -267,7 +287,12 @@ export default function Dashboard() {
       es.onmessage = (m) => {
         if (generation.current !== current) return;
         const msg = JSON.parse(m.data) as SessionStreamMessage;
-        setRun((r) => (r && r.id === id ? { ...r, events: [...r.events, ...msg.events], alerts: msg.alerts, policies: msg.policies } : r));
+        setRun((r) => {
+          if (!r || r.id !== id) return r;
+          return { ...r, events: mergeLiveEvents(r.events, msg.events, msg.updates),
+            completionWarnings: msg.completionWarnings ?? r.completionWarnings,
+            alerts: msg.alerts, policies: msg.policies };
+        });
         // Follow the live edge unless the viewer has scrubbed back to inspect something.
         const atEdge = shown.current;
         setCursor((c) => (c >= atEdge ? msg.total : c));
@@ -279,13 +304,21 @@ export default function Dashboard() {
         es.close();
         if (generation.current !== current) return;
         setLiveStatus('connecting');
-        reconnect.current = setTimeout(() => { if (generation.current === current) void watch(id); }, 2000);
+        reconnect.current = setTimeout(() => { if (generation.current === current) void watch(id, true); }, 2000);
       };
       es.addEventListener('auth-expired', retry);
       es.onerror = retry;
       stream.current = es;
     } catch (error) {
-      if (generation.current === current) showError(error);
+      if (generation.current !== current) return;
+      showError(error);
+      // A drop can outlast the first snapshot refresh. Keep rehydrating rather
+      // than abandoning the watch while offline; never retry terminal access
+      // errors, and stopWatch cancels this timer on scope/account/session change.
+      if (reconnecting && canReconnectLive(error)) {
+        setLiveStatus('connecting');
+        reconnect.current = setTimeout(() => { if (generation.current === current) void watch(id, true); }, 2000);
+      }
     }
   };
 
@@ -328,6 +361,11 @@ export default function Dashboard() {
   const reportOnly = run?.mode === 'report-only';
   const isVillage = run?.source === 'ai-village';
   const isLive = run?.source === 'live';
+  const executionEvidence = run?.executionEvidence === true;
+  const completionWarnings = executionEvidence ? run?.completionWarnings ?? [] : [];
+  const toolOutcome = (e: Trace) => e.executionStatus
+    ? `${e.executionStatus} · ${e.executionProvenance ?? 'engine-observed'}`
+    : 'not observed';
   const ticks = useMemo(() => {
     const size = Math.max(1, Math.ceil(events.length / TICK_BINS));
     const bins: { first: number; last: number; decision: string }[] = [];
@@ -382,12 +420,16 @@ export default function Dashboard() {
     return c;
   }, [visible]);
 
-  const feed = useMemo(() => visible.filter((e) =>
+  const matchingEvents = useMemo(() => visible.filter((e) =>
     (fDec === 'all' || e.decision === fDec) && (fAct === 'all' || e.action === fAct) &&
-    (fCh === 'all' || e.channel === fCh) && (!fAgent || e.agentId === fAgent || e.target === fAgent),
-  ).slice(-FEED_LIMIT).reverse(), [visible, fDec, fAct, fCh, fAgent]);
+    (fCh === 'all' || e.channel === fCh) && (!fAgent || e.agentId === fAgent || e.target === fAgent) &&
+    (!executionEvidence || matchesToolEvidence(e, fProvenance, fOutcome)),
+  ), [visible, fDec, fAct, fCh, fAgent, executionEvidence, fProvenance, fOutcome]);
+  const feed = useMemo(() => matchingEvents.slice(-FEED_LIMIT).reverse(), [matchingEvents]);
+  const toolEvidenceCounts = useMemo(() => countToolEvidence(matchingEvents), [matchingEvents]);
+  const toolCounts = toolEvidenceCounts.outcomes;
 
-  const selected = events.find((e) => e.id === selEvent) ?? null;
+  const selected = matchingEvents.find((e) => e.id === selEvent) ?? null;
   const complete = !!run && cursor >= total && !playing && total > 0;
   const highlightNodes = new Set<string>();
   const focus = hover ?? fAgent;
@@ -474,10 +516,17 @@ export default function Dashboard() {
             {liveScope === 'demo'
               ? <Btn primary testid="button-launch-demo" onClick={launchDemo}><FlaskConical size={14} /> Launch synthetic demo</Btn>
               : <>
-                <Btn testid="button-create-session" onClick={async () => {
+                <label className="text-xs flex items-center gap-1">
+                  Receipt grace (s)
+                  <input type="number" min={1} max={86400} value={completionGrace}
+                    className="h-8 w-20 bg-secondary border border-border px-1.5"
+                    data-testid="input-completion-grace"
+                    onChange={(e) => setCompletionGrace(Number(e.target.value))} />
+                </label>
+                <Btn testid="button-create-session" disabled={!Number.isInteger(completionGrace) || completionGrace < 1 || completionGrace > 86400} onClick={async () => {
                   const current = generation.current;
                   try {
-                    const result = await createSwarmSession({ policy: 'mock', feedbackEnabled: feedback, root: 'orchestrator' });
+                    const result = await createSwarmSession({ policy: 'mock', feedbackEnabled: feedback, root: 'orchestrator', completionGraceSeconds: completionGrace });
                     if (current !== generation.current) return;
                     setLiveId(result.sessionId); await watch(result.sessionId);
                   } catch (error) { showError(error); }
@@ -513,6 +562,24 @@ export default function Dashboard() {
       )}
 
       {/* MAIN */}
+      {executionEvidence && (
+        <section className="border-b border-border px-4 py-2 text-xs" data-testid="completion-warnings">
+          <b>Missing completion: {completionWarnings.length}</b>
+          <span className="text-muted-foreground"> · Receipt grace: {run?.completionGraceSeconds ?? 60}s after server admission. Visibility only, not a detection.</span>
+          <p className="text-muted-foreground">An overdue receipt does not establish body entry, failure, rollback, or retry safety. The tool may still be running; a late receipt clears the warning.</p>
+          {completionWarnings.length > 0 && (
+            <ul className="max-h-32 overflow-y-auto mt-1" data-testid="list-completion-warnings">
+              {completionWarnings.map((warning) => (
+                <li key={warning.eventId}>
+                  <button className="underline" onClick={() => { setSelEvent(warning.eventId); setTab('feed'); }}>
+                    Missing completion · {warning.eventId} · {warning.agentId} / {warning.target}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[60fr_40fr] min-h-0">
         {/* RADAR */}
         <section className="relative border-b lg:border-b-0 lg:border-r border-border min-h-[420px] lg:min-h-[560px] overflow-hidden">
@@ -527,7 +594,7 @@ export default function Dashboard() {
 
           <div className="absolute bottom-3 left-4 z-10 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground" style={mono}>
             <span style={{ color: C.ok }}>● normal agent</span>
-            <span style={{ color: C.ok }}>12 = edge weight (repeats)</span>
+            <span style={{ color: C.ok }}>12 = edge weight ({executionEvidence ? 'authorizations, not successes' : 'repeats'})</span>
             <span style={{ color: C.bad }}>● detected cluster</span>
             <span style={{ color: C.tool }}>■ tool / page</span>
             <span style={{ color: C.bad }}>- - blocked attempt (not executed)</span>
@@ -618,13 +685,30 @@ export default function Dashboard() {
         {/* RIGHT PANEL */}
         <section className="flex flex-col min-h-[460px] lg:max-h-[calc(100dvh-210px)]">
           <div className="grid grid-cols-5 border-b border-border text-center">
-            {[['Allow', counts.allow, C.ok], [reportOnly ? 'Would throttle' : 'Throttle', counts.throttle, C.warn], [reportOnly ? 'Would drop' : 'Drop', counts.drop, C.bad], ['Observed', counts.observed, C.info], ['Executed', counts.executed, '#dfe7f1']].map(([l, v, c]) => (
+            {[['Allow', counts.allow, C.ok], [reportOnly ? 'Would throttle' : 'Throttle', counts.throttle, C.warn], [reportOnly ? 'Would drop' : 'Drop', counts.drop, C.bad], ['Observed', counts.observed, C.info], [executionEvidence ? 'Authorized' : 'Executed', counts.executed, '#dfe7f1']].map(([l, v, c]) => (
               <div key={l as string} className="py-2 border-r border-border last:border-r-0" data-testid={`counter-${(l as string).toLowerCase().replace(' ', '-')}`}>
                 <div className="text-lg font-bold" style={{ ...mono, color: c as string }}>{v}</div>
                 <div className="text-[9px] uppercase tracking-widest text-muted-foreground">{l}</div>
               </div>
             ))}
           </div>
+          {executionEvidence && (
+            <div className="border-b border-border px-3 py-2 text-[10px]" style={mono} data-testid="tool-outcomes">
+              <div className="text-muted-foreground mb-1">Matching tool outcomes · current replay window, before display cap · authorization does not mean success</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <span>Not started: {toolCounts['not-started']}</span>
+                <span style={{ color: C.ok }}>Succeeded: {toolCounts.succeeded}</span>
+                <span style={{ color: C.bad }}>Failed: {toolCounts.failed}</span>
+                <span className="text-muted-foreground">Not observed: {toolCounts.unobserved}</span>
+              </div>
+              <div className="text-muted-foreground mt-1">
+                Engine-observed: {toolEvidenceCounts.provenance['engine-observed']}
+                {' · '}Caller-reported: {toolEvidenceCounts.provenance['caller-reported']}
+                {' · '}Unobserved provenance: {toolEvidenceCounts.provenance.unobserved}
+                {' · '}Caller reports are not engine verification
+              </div>
+            </div>
+          )}
           <div className="flex border-b border-border">
             {([['feed', 'ASP feed'], ['policy', 'Tripwires'], ['settings', 'Policy'], ['info', 'Limits & data']] as [Tab, string][]).map(([t, l]) => (
               <button key={t} data-testid={`tab-${t}`} onClick={() => setTab(t)}
@@ -646,7 +730,30 @@ export default function Dashboard() {
                 <select className={sel} value={fCh} onChange={(e) => setFCh(e.target.value)} data-testid="select-filter-channel" aria-label="Channel filter">
                   {['all', 'in_band', 'out_of_band'].map((o) => <option key={o} value={o}>{o === 'all' ? 'any channel' : o}</option>)}
                 </select>
+                {executionEvidence && <>
+                  <select className={sel} value={fProvenance} onChange={(e) => setFProvenance(e.target.value as ProvenanceFilter)}
+                    data-testid="select-filter-provenance" aria-label="Evidence provenance filter">
+                    <option value="all">any provenance</option>
+                    <option value="engine-observed">engine-observed</option>
+                    <option value="caller-reported">caller-reported</option>
+                    <option value="unobserved">unobserved provenance</option>
+                  </select>
+                  <select className={sel} value={fOutcome} onChange={(e) => setFOutcome(e.target.value as OutcomeFilter)}
+                    data-testid="select-filter-outcome" aria-label="Tool outcome filter">
+                    <option value="all">any tool outcome</option>
+                    <option value="not-started">not started</option>
+                    <option value="succeeded">succeeded</option>
+                    <option value="failed">failed</option>
+                    <option value="unobserved">not observed</option>
+                  </select>
+                </>}
+                <button className={sel} onClick={resetFilters} data-testid="button-reset-filters">Reset filters</button>
                 {fAgent && <button className="text-xs px-2 h-7 border" style={{ borderColor: C.info, color: C.info }} data-testid="button-clear-agent" onClick={() => setFAgent(null)}>{fAgent} x</button>}
+              </div>
+              <div className="px-3 py-1 text-[10px] text-muted-foreground border-b border-border" style={mono}
+                data-testid="text-feed-count" aria-live="polite">
+                Showing {feed.length} of {matchingEvents.length} matching events / {visible.length} in replay window
+                {matchingEvents.length > FEED_LIMIT && ` · newest ${FEED_LIMIT} shown`}
               </div>
               {/* Newest rows are inserted at the top; scroll anchoring would push them out of view. */}
               <div className="flex-1 overflow-y-auto min-h-[180px]" style={{ overflowAnchor: 'none' }} data-testid="list-feed">
@@ -668,7 +775,11 @@ export default function Dashboard() {
                     </span>
                     <span className="flex flex-col items-end gap-1">
                       <Badge color={decColor(e.decision)}>{decLabel(e.decision, reportOnly)}</Badge>
-                      {!e.executed && <span className="text-[9px] uppercase" style={{ ...mono, color: C.bad }}>not executed</span>}
+                      {executionEvidence && e.action === 'tool' && (
+                        <span className="text-[9px] uppercase" style={{ ...mono, color: e.executionStatus === 'failed' ? C.bad : e.executionStatus === 'succeeded' ? C.ok : C.dim }}
+                          data-testid={`outcome-${e.id}`}>{toolOutcome(e)}</span>
+                      )}
+                      {!e.executed && !executionEvidence && <span className="text-[9px] uppercase" style={{ ...mono, color: C.bad }}>not executed</span>}
                       {e.executed && e.mode === 'report-only' && (e.decision === 'drop' || e.decision === 'throttle') && <span className="text-[9px] uppercase" style={{ ...mono, color: C.warn }}>happened</span>}
                       {e.taintOrigin && !isVillage && <span className="text-[9px] uppercase" style={{ ...mono, color: C.warn }} title={`Contaminated by untrusted content from ${e.taintOrigin}`}>tainted</span>}
                     </span>
@@ -686,11 +797,21 @@ export default function Dashboard() {
                     ['span', selected.spanId], ['parent span', selected.parentSpanId || 'none'],
                     ['action', `${selected.action} / ${selected.channel}`], ['target', selected.target],
                     ['depth', String(selected.depth)], ['rule', selected.rule], ['policy version', `v${selected.policyVersion}`],
-                    ['executed', selected.mode === 'report-only' ? 'yes, historical record (policy evaluated in report-only mode)' : selected.executed ? 'yes' : 'no, blocked before execution'],
+                    [executionEvidence ? 'authorized' : 'executed', executionEvidence ? (selected.executed ? 'yes (permission only)' : 'no, blocked before execution') : selected.mode === 'report-only' ? 'yes, historical record (policy evaluated in report-only mode)' : selected.executed ? 'yes' : 'no, blocked before execution'],
+                    ...(executionEvidence && selected.action === 'tool' ? [
+                      ['tool outcome', toolOutcome(selected)],
+                      ['body entered', selected.toolBodyExecuted == null ? 'not observed' : selected.toolBodyExecuted ? 'yes (not proof of success)' : 'no'],
+                      ...(selected.executed && !selected.executionStatus ? [
+                        ['completion receipt', completionWarnings.some((w) => w.eventId === selected.id)
+                          ? 'Missing completion (overdue; outcome not observed)'
+                          : 'Pending (outcome not observed)'],
+                      ] : []),
+                      ...(selected.executionError ? [['tool error', selected.executionError]] : []),
+                    ] : []),
                     ...(selected.sourceRef ? [['source', selected.sourceRef]] : []),
                     ...(selected.network ? [['network', selected.network]] : []),
                     ...(selected.reads ? [['reads', `${selected.reads} content`]] : []),
-                    ...(selected.write ? [['writes', selected.resource || 'local / private state']] : []),
+                    ...(selected.write ? [[executionEvidence ? 'write target' : 'writes', selected.resource || 'local / private state']] : []),
                     ...(selected.contaminated ? [['context', selected.taintOrigin ? `contaminated by untrusted content from ${selected.taintOrigin}` : 'contaminated: this span read untrusted content earlier']] : []),
                     ...(selected.scope?.length ? [['delegated scope', selected.scope.join(', ')]] : []),
                     ...(selected.mentions?.length ? [['mentions', selected.mentions.join(', ')]] : []),
@@ -769,6 +890,7 @@ export default function Dashboard() {
                     <li>Human messages are anonymized into one actor with text withheld. Behaviour before and after 2026-03-24 reflects different scaffolding regimes.</li>
                   </> : isLive ? <>
                     <li>Live session: every decision was made before the agent ran the action. Blocked calls never reached the tool.</li>
+                    {executionEvidence && <li>Authorized means permission only. Registered tools have engine-observed outcomes. External completion receipts are caller-reported, not engine verification; without a receipt the outcome is not observed. Failed bodies may have partial side effects; failure does not prove rollback.</li>}
                     <li>The real-agent demo's four sandbox tools are evaluated and executed by the server gateway. Other guard-wrapped tools remain cooperative. This is not operating-system isolation for code with host filesystem access.</li>
                   </> : <li>All data here is synthetic and generated for demonstration. Nothing depicts a real incident.</li>}
                   <li>Intent fingerprints are hashes, not semantic embeddings. Throttling matches identical normalized intents; the gateway is not an isolated tamper-proof process.</li>
@@ -803,7 +925,7 @@ export default function Dashboard() {
                         : Object.entries(rows).map(([k, n]) => <div key={k} className="flex justify-between gap-2" style={mono}><span className="truncate">{k}</span><span>{n}</span></div>)}
                     </div>
                   ))}
-                  <p>Writes from contexts that had read untrusted content: <b style={mono}>{run.summary.contaminatedWrites}</b> of {run.summary.writes}</p>
+                  <p>{executionEvidence ? 'Proposed writes' : 'Writes'} from contexts that had read untrusted content: <b style={mono}>{run.summary.contaminatedWrites}</b> of {run.summary.writes}</p>
                 </div>
               )}
             </div>

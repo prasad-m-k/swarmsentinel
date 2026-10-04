@@ -60,14 +60,32 @@ The trusted terminal controller separately creates `data/agent-demos/<session-id
 
 These files are gitignored. Do not commit provider credentials or run transcripts. A gateway `allow` (and the trace's legacy `executed` field) records permission, not proof that a tool succeeded. The execution response's `toolBodyExecuted` reports whether a body was entered; `error=tool_execution_failed` explicitly reports a failed attempt. The successful-body list and server-returned snapshots supply execution evidence.
 
+Owner-private Live snapshots, SSE events, JSON exports and reports also record `executionStatus` (`not-started`, `succeeded`, or `failed`) and `toolBodyExecuted` on observed tool calls. Failure adds only the fixed `executionError=tool_execution_failed` code, never raw exception text, tool results, credentials or sandbox paths. An allowed permission-only `/evaluate` call has no observed completion; the dashboard labels it **not observed**, not successful. Non-tool actions have no tool outcome. A failed body may have made partial changes, so failure is not proof of rollback.
+
+The private dashboard labels the legacy execution count **Authorized** and shows separate tool outcome counts. Graph weights and policy heuristics still count admissions, not successful completions. Reports list shared resources only for successfully completed writes; proposed-write counts remain safety telemetry. Public synthetic demos and historical report-only replays retain their original semantics and do not acquire inferred tool outcomes.
+
 ## Server-owned execution contract
 
 - `POST /api/swarm/sessions/{id}/sandbox` initializes either fixed normal or adversarial fixtures once, before any actions. It accepts only `mode` and requires the `agents` policy. Reinitialization, mode switching, caller-chosen paths and late initialization are refused.
-- `POST /api/swarm/sessions/{id}/execute` accepts `agentId`, `spanId`, `parentId`, `parentSpanId`, the registered `tool` name and its `arguments`. The engine verifies owner authentication and session admission/lineage, validates the tool's exact arguments, derives target/trust/write/resource metadata and server time, evaluates ASP and dispatches under the same session lock.
+- `POST /api/swarm/sessions/{id}/execute` requires `idempotencyKey` alongside `agentId`, `spanId`, `parentId`, `parentSpanId`, the registered `tool` name and its `arguments`. Keys are 1–200 characters from letters, digits, `.`, `_`, `:`, and `-`. The engine verifies owner authentication and session admission/lineage, validates the tool's exact arguments, derives target/trust/write/resource metadata and server time, evaluates ASP and dispatches under the same session lock.
 - `GET /api/swarm/sessions/{id}/sandbox` returns owner-private execution evidence, never paths. These routes do not exist on the public synthetic demo API and do not launch paid inference.
 - An `evaluate` decision is not a reusable execution authorization. Direct requests to `execute` receive a fresh decision even if the caller previously obtained an allow. Refusals return no result and `toolBodyExecuted=false`.
 - Untrusted fixture reads contaminate the admitted actor as well as the reading span. Fresh invented spans and narrower child agents cannot reset that contamination.
-- The SDK's `Agent.execute` consumes the server result. It does not invoke a caller-side function. It does not retry an execution after a lost HTTP response, since the write might already have happened; stop and inspect the owner-private snapshot/Live trace before deciding what to do next.
+- The SDK's `Agent.execute` consumes the server result without invoking a caller-side function. It generates a new idempotency key for each invocation and retries a connection failure once with the same key and payload. Exact replays return the original outcome (including a refusal or tool failure) without another ASP evaluation or dispatch. Changing actor, lineage, tool, or arguments under the same key returns HTTP 409. JSON object member order does not count as a change. A new key always gets fresh ASP checks; a replay is a receipt for an old request, not a new permission to execute.
+- For manual recovery, supply the same `idempotency_key` and unchanged arguments to the same agent in the same session. If both connection attempts fail, `sdk.guard.ExecutionUncertain.idempotency_key` exposes the generated key. Calling `execute` again without it is a **new operation** and can make another fictional payment or board entry.
+- Outcomes are retained without key eviction for the disposable session lifetime and removed on session deletion. Authentication and ownership checks still run before replay lookup. Session state, fixtures, and replay receipts are not durable across process restarts; this is not a crash-safe real-payment system. An interrupted request with no saved outcome is refused under its reserved key rather than dispatched again.
+
+```python
+from sdk.guard import ExecutionUncertain
+
+arguments = {"amount": 125, "recipient": "approved-supplier"}
+try:
+    outcome = reviewer.execute("transfer_funds", arguments)
+except ExecutionUncertain as error:
+    # Keep the same reviewer instance (and therefore lineage), session and arguments.
+    outcome = reviewer.execute("transfer_funds", arguments,
+                               idempotency_key=error.idempotency_key)
+```
 
 ## Limits and safety
 

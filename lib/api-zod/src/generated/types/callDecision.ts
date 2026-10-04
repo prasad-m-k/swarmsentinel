@@ -11,6 +11,8 @@ import type { Violation } from './violation';
 
 export interface CallDecision {
   eventId: string;
+  /** Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs. */
+  completionToken?: string;
   allowed: boolean;
   decision: CallDecisionDecision;
   rule: string;

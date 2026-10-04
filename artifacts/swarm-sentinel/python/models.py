@@ -56,13 +56,36 @@ class Violation(BaseModel):
     enforced: bool
 
 
+class CompletionReceipt(BaseModel):
+    """No results, error strings, paths, or caller-selected provenance accepted."""
+    model_config = ConfigDict(extra="forbid")
+    eventId: str = Field(min_length=1, max_length=200)
+    completionToken: str = Field(pattern=r"^[a-f0-9]{32}$")
+    agentId: str = Field(min_length=1, max_length=120)
+    spanId: str = Field(min_length=1, max_length=200)
+    executionStatus: Literal["succeeded", "failed"]
+
+
 class Trace(Event):
     decision: Literal["allow", "throttle", "drop", "observed"]
     rule: str
     reason: str
     executed: bool
+    # Live admission remains separate from engine-observed completion. None
+    # means unobserved / inapplicable, never an implied success.
+    executionStatus: Optional[Literal["not-started", "succeeded", "failed"]] = None
+    toolBodyExecuted: Optional[bool] = None
+    executionError: Optional[Literal["tool_execution_failed"]] = None
+    executionProvenance: Optional[Literal["engine-observed", "caller-reported"]] = None
     policyVersion: int
     mode: Literal["enforce", "report-only"] = "enforce"
     violations: list[Violation] = []
     contaminated: bool = False
     taintOrigin: str = ""
+
+    def recorder_dump(self):
+        """Keep legacy replay payloads unchanged; emit evidence only when known."""
+        return self.model_dump(exclude={
+            name for name in ("executionStatus", "toolBodyExecuted", "executionError", "executionProvenance")
+            if getattr(self, name) is None
+        })

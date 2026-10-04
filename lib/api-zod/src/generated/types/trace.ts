@@ -8,6 +8,9 @@
 import type { TraceAction } from './traceAction';
 import type { TraceChannel } from './traceChannel';
 import type { TraceDecision } from './traceDecision';
+import type { TraceExecutionError } from './traceExecutionError';
+import type { TraceExecutionProvenance } from './traceExecutionProvenance';
+import type { TraceExecutionStatus } from './traceExecutionStatus';
 import type { TraceMode } from './traceMode';
 import type { TraceReads } from './traceReads';
 import type { TraceSource } from './traceSource';
@@ -29,7 +32,16 @@ export interface Trace {
   decision: TraceDecision;
   rule: string;
   reason: string;
+  /** Legacy gateway admission flag; in Live this is authorization, not proof of tool success. */
   executed: boolean;
+  /** Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization. */
+  executionStatus?: TraceExecutionStatus;
+  /** Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects. */
+  toolBodyExecuted?: boolean;
+  /** Fixed safe error code only; no exception details or tool results. */
+  executionError?: TraceExecutionError;
+  /** Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows. */
+  executionProvenance?: TraceExecutionProvenance;
   policyVersion: number;
   source?: TraceSource;
   /** table:row-id in the source dataset */

@@ -5,11 +5,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from pydantic import BaseModel, Field
 from asp_policy import ASPPolicy
 from live import CallInput, SessionInput, SessionStore
-from models import RunInput
+from models import RunInput, CompletionReceipt
 from pipeline import replay, summarize
 from reporter import markdown_report
 from village import store
@@ -23,9 +25,18 @@ app = FastAPI(title="SwarmSentinel Python Engine", docs_url="/api/swarm/docs",
 
 SYNTHETIC = "Synthetic sample traces. Not AI Village data or a real incident replay."
 VILLAGE = "AI Village dataset replay (historical records, report-only). Decisions are counterfactual."
-LIVE = "Live session: each call was decided before the calling agent executed it."
+LIVE = "Owner-private Live: authorization, engine-observed outcomes, and caller-reported completion are recorded separately."
 SESSIONS = SessionStore()
 DEMOS = SessionStore(limit=20)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request, error):
+    # Default validation responses echo rejected inputs, including capability
+    # tokens and unexpected caller error/result text. Never echo receipt bodies.
+    if request.url.path.endswith("/completion"):
+        return JSONResponse(status_code=422, content={"detail": "Invalid completion receipt"})
+    return await request_validation_exception_handler(request, error)
 
 
 @app.middleware("http")
@@ -113,13 +124,18 @@ def simulate(settings: RunInput, request: Request = None):
                 gateway, sentinel, policy_name, policy, settings, events[0]["timestamp"], window)
 
 
-def _run(run_id, scenario, source, provenance, gateway, sentinel, policy_name, policy, settings, started_at, window=None):
+def _run(run_id, scenario, source, provenance, gateway, sentinel, policy_name, policy, settings, started_at, window=None,
+         execution_evidence=False, completion_warnings=None, completion_grace=None):
     run = dict(id=run_id, scenario=scenario, source=source, provenance=provenance, mode=gateway.mode,
                rootAgent=gateway.root, startedAt=started_at, window=window,
                policyName=policy_name, policy=policy.declaration(),
-               events=[t.model_dump() for t in gateway.telemetry],
+               events=[t.recorder_dump() for t in gateway.telemetry],
                alerts=sentinel.alerts, policies=sentinel.policy_changes, edges=sentinel.weighted_edges(),
                summary=summarize(gateway.telemetry, sentinel.alerts))
+    if execution_evidence:
+        run["executionEvidence"] = True
+        run["completionWarnings"] = completion_warnings or []
+        run["completionGraceSeconds"] = completion_grace
     run["report"] = markdown_report(run, settings)
     return run
 
@@ -155,7 +171,8 @@ def create_session(spec: SessionInput, principal: Principal = Depends(require_pr
     except OverflowError:
         raise HTTPException(429, "Session capacity reached; delete an owned session before creating another")
     return {"sessionId": session.id, "policyName": spec.policy, "root": spec.root,
-            "feedbackEnabled": spec.feedbackEnabled, "policy": session.policy.declaration()}
+            "feedbackEnabled": spec.feedbackEnabled, "policy": session.policy.declaration(),
+            "completionGraceSeconds": spec.completionGraceSeconds}
 
 
 @app.post("/api/swarm/sessions/{session_id}/evaluate")
@@ -183,7 +200,7 @@ def sandbox_snapshot(session_id: str, principal: Principal = Depends(require_pri
 
 @app.post("/api/swarm/sessions/{session_id}/execute")
 def execute_tool(session_id: str, spec: ExecutionInput, principal: Principal = Depends(require_principal)):
-    """Authorization, evaluation and registered dispatch; there is no execute-after-allow API."""
+    """Authenticate even replays; exact keyed retries return the original outcome."""
     try:
         session = _session(session_id, principal)
         with session.lock:
@@ -196,6 +213,20 @@ def execute_tool(session_id: str, spec: ExecutionInput, principal: Principal = D
         raise HTTPException(409, str(e))
 
 
+@app.post("/api/swarm/sessions/{session_id}/completion")
+def complete_tool(session_id: str, receipt: CompletionReceipt, principal: Principal = Depends(require_principal)):
+    session = _session(session_id, principal)
+    with session.lock:
+        if not still_valid(principal):
+            raise HTTPException(401, "Authentication expired")
+        try:
+            return session.complete(receipt)
+        except LookupError:
+            raise HTTPException(404, "Unknown evaluated event")
+        except ValueError:
+            raise HTTPException(409, "Completion receipt is ineligible, mismatched, or already recorded")
+
+
 @app.get("/api/swarm/sessions/{session_id}")
 def session_run(session_id: str, principal: Principal = Depends(require_principal)):
     return _snapshot(_session(session_id, principal))
@@ -205,7 +236,10 @@ def _snapshot(s, demo=False):
     with s.lock:
         started = s.gateway.telemetry[0].timestamp if s.gateway.telemetry else s.created
         return _run(s.id, "live", "live", SYNTHETIC if demo else LIVE,
-                    s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started)
+                    s.gateway, s.sentinel, s.spec.policy, s.policy, s.settings, started,
+                    execution_evidence=not demo,
+                    completion_warnings=s.completion_warnings() if not demo else None,
+                    completion_grace=s.spec.completionGraceSeconds if not demo else None)
 
 
 @app.get("/api/swarm/sessions/{session_id}/stream")
@@ -219,17 +253,38 @@ def _stream(session_store, session_id, after, principal=None):
 
     async def events():
         sent, idle = max(0, after), 0
+        evidence_seen = {}
+        warnings_seen = None
         while (s := session_store.get(session_id)) is not None:
             if principal and (not still_valid(principal) or s.owner != principal.subject):
                 yield "event: auth-expired\ndata: {}\n\n"
                 return
             with s.lock:
-                fresh = [t.model_dump() for t in s.gateway.telemetry[sent:]]
+                fresh = [t.recorder_dump() for t in s.gateway.telemetry[sent:]]
+                updates = []
+                if principal:
+                    # Re-send existing evidence on first connection to close the
+                    # snapshot/subscribe race; thereafter send only changed rows.
+                    for index, trace in enumerate(s.gateway.telemetry):
+                        signature = (trace.executionStatus, trace.toolBodyExecuted,
+                                     trace.executionError, trace.executionProvenance)
+                        if index < sent and signature != evidence_seen.get(trace.id, (None,) * 4):
+                            updates.append(trace.recorder_dump())
+                        evidence_seen[trace.id] = signature
                 alerts, policies = list(s.sentinel.alerts), list(s.sentinel.policy_changes)
-            if fresh:
+                warnings = s.completion_warnings() if principal else None
+            warnings_changed = principal is not None and warnings != warnings_seen
+            if fresh or updates or warnings_changed:
                 sent += len(fresh)
                 idle = 0
-                yield f"data: {json.dumps({'events': fresh, 'alerts': alerts, 'policies': policies, 'total': sent})}\n\n"
+                payload = {'events': fresh, 'alerts': alerts, 'policies': policies, 'total': sent}
+                if principal:
+                    payload["updates"] = updates
+                    # Full replacement, including [] after late receipts. Resend
+                    # on every subscription, even with no new recorder rows.
+                    payload["completionWarnings"] = warnings
+                    warnings_seen = warnings
+                yield f"data: {json.dumps(payload)}\n\n"
             else:
                 idle += 1
                 if idle % 60 == 0:

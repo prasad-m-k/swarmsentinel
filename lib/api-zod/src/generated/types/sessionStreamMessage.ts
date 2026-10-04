@@ -5,12 +5,17 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CompletionWarning } from './completionWarning';
 import type { PolicyChange } from './policyChange';
 import type { SwarmAlert } from './swarmAlert';
 import type { Trace } from './trace';
 
 export interface SessionStreamMessage {
   events: Trace[];
+  /** Replace existing rows by id; never append these or increment action counts. Existing evidence is resent on subscription to close snapshot races. */
+  updates?: Trace[];
+  /** Owner-private only. Full replacement of overdue receipt warnings, including an empty array when resolved. Sent on subscription and changes without requiring new actions; not detections or execution outcomes. */
+  completionWarnings?: CompletionWarning[];
   alerts: SwarmAlert[];
   policies: PolicyChange[];
   total: number;

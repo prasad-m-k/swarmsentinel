@@ -13,4 +13,10 @@ export interface SessionInput {
   root?: string;
   /** @maxLength 200 */
   label?: string;
+  /**
+     * Server-admission grace period for missing external completion receipts. Visibility only; not a tool timeout or retry deadline.
+     * @minimum 1
+     * @maximum 86400
+     */
+  completionGraceSeconds?: number;
 }

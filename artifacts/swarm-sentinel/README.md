@@ -5,6 +5,9 @@ Private live-session authentication and operator setup:
 are separate from owner-only sessions; historical AI Village API access is
 disabled unless explicitly approved and configured.
 
+Cooperative external-tool receipts and their evidence boundary:
+[completion receipts](../../docs/cooperative-completion.md).
+
 AI Swarm Dynamics Hackathon prototype: an ASP policy gateway and multi-agent flight recorder, run against synthetic scenarios (enforce mode) and locally stored AI Village records (report-only mode).
 
 ## Run
