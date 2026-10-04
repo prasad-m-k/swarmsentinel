@@ -296,18 +296,140 @@ export interface SwarmSources {
   policies: SwarmSourcesPolicies;
 }
 
+export type SandboxInputMode = typeof SandboxInputMode[keyof typeof SandboxInputMode];
+
+
+export const SandboxInputMode = {
+  normal: 'normal',
+  adversarial: 'adversarial',
+} as const;
+
+export interface SandboxInput {
+  mode?: SandboxInputMode;
+}
+
+export type ExecutionInputTool = typeof ExecutionInputTool[keyof typeof ExecutionInputTool];
+
+
+export const ExecutionInputTool = {
+  read_invoice: 'read_invoice',
+  read_ledger: 'read_ledger',
+  transfer_funds: 'transfer_funds',
+  post_status: 'post_status',
+} as const;
+
+/**
+ * Validated against the selected tool: reads accept {}; transfer_funds requires positive integer amount and recipient approved-supplier or sandbox-attacker; post_status requires nonblank text of 1–500 characters. No other keys.
+ */
+export type ExecutionInputArguments = { [key: string]: unknown };
+
+export interface ExecutionInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  agentId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  spanId: string;
+  /** @maxLength 120 */
+  parentId?: string;
+  /** @maxLength 200 */
+  parentSpanId?: string;
+  tool: ExecutionInputTool;
+  /** Validated against the selected tool: reads accept {}; transfer_funds requires positive integer amount and recipient approved-supplier or sandbox-attacker; post_status requires nonblank text of 1–500 characters. No other keys. */
+  arguments?: ExecutionInputArguments;
+}
+
+export type SandboxTransferRecipient = typeof SandboxTransferRecipient[keyof typeof SandboxTransferRecipient];
+
+
+export const SandboxTransferRecipient = {
+  'approved-supplier': 'approved-supplier',
+  'sandbox-attacker': 'sandbox-attacker',
+} as const;
+
+export interface SandboxTransfer {
+  amount: number;
+  recipient: SandboxTransferRecipient;
+}
+
+export interface SandboxLedger {
+  credits: number;
+  transfers: SandboxTransfer[];
+}
+
+export interface SandboxStatus {
+  text: string;
+}
+
+export type SandboxSnapshotMode = typeof SandboxSnapshotMode[keyof typeof SandboxSnapshotMode];
+
+
+export const SandboxSnapshotMode = {
+  normal: 'normal',
+  adversarial: 'adversarial',
+} as const;
+
+export interface SandboxSnapshot {
+  sandboxOnly: true;
+  mode: SandboxSnapshotMode;
+  initialCredits: number;
+  ledger: SandboxLedger;
+  board: SandboxStatus[];
+  actualToolBodiesExecuted: string[];
+}
+
+export type CallDecisionDecision = typeof CallDecisionDecision[keyof typeof CallDecisionDecision];
+
+
+export const CallDecisionDecision = {
+  allow: 'allow',
+  throttle: 'throttle',
+  drop: 'drop',
+  observed: 'observed',
+} as const;
+
+export interface CallDecision {
+  eventId: string;
+  allowed: boolean;
+  decision: CallDecisionDecision;
+  rule: string;
+  reason: string;
+  policyVersion: number;
+  taintOrigin: string;
+  violations: Violation[];
+  alerts: SwarmAlert[];
+  evaluationMs: number;
+}
+
+export interface ToolOutcome {
+  decision: CallDecision;
+  allowed: boolean;
+  toolBodyExecuted: boolean;
+  result?: unknown;
+  rule?: string;
+  reason?: string;
+  error?: string;
+}
+
 export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];
 
 
 export const SessionInputPolicy = {
   mock: 'mock',
   'ai-village': 'ai-village',
+  agents: 'agents',
 } as const;
 
 export interface SessionInput {
   policy?: SessionInputPolicy;
   feedbackEnabled?: boolean;
   root?: string;
+  /** @maxLength 200 */
+  label?: string;
 }
 
 export interface SessionSummary {
@@ -386,29 +508,6 @@ export interface CallInput {
   timestamp?: string | null;
 }
 
-export type CallDecisionDecision = typeof CallDecisionDecision[keyof typeof CallDecisionDecision];
-
-
-export const CallDecisionDecision = {
-  allow: 'allow',
-  throttle: 'throttle',
-  drop: 'drop',
-  observed: 'observed',
-} as const;
-
-export interface CallDecision {
-  eventId: string;
-  allowed: boolean;
-  decision: CallDecisionDecision;
-  rule: string;
-  reason: string;
-  policyVersion: number;
-  taintOrigin: string;
-  violations: Violation[];
-  alerts: SwarmAlert[];
-  evaluationMs: number;
-}
-
 export interface HealthStatus {
   status: string;
 }
@@ -422,5 +521,12 @@ after?: number;
 
 export type LaunchInjectionDemo202 = {
   sessionId: string;
+};
+
+export type StreamSwarmDemoSessionParams = {
+/**
+ * @minimum 0
+ */
+after?: number;
 };
 

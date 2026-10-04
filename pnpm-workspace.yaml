@@ -56,9 +56,9 @@ catalog:
   framer-motion: ^12.23.24
   lucide-react: ^0.545.0
   # Must be this exact version because expo requires it
-  react: 19.1.0
+  react: 19.1.4
   # Must be this exact version because expo requires it
-  react-dom: 19.1.0
+  react-dom: 19.1.4
   tailwind-merge: ^3.3.1
   tailwindcss: ^4.1.14
   tsx: ^4.21.0
@@ -160,3 +160,7 @@ overrides:
   esbuild: "0.28.2"
   # orval pins js-yaml to an exact version older than the CVE fix (>=4.3.2)
   js-yaml: '4.3.2'
+  # Latest minimatch/ajv still allow vulnerable transitive releases.
+  # Keep these overrides within the currently used major versions.
+  'brace-expansion@>=5.0.0 <5.0.12': '5.0.12'
+  'fast-uri@>=3.0.0 <3.1.8': '3.1.8'

@@ -62,7 +62,12 @@ class ASPGateway:
 
     def taint_origin(self, event):
         """Event id of the untrusted read this context descends from, or "" if clean."""
-        return self.contaminated.get(event.spanId) or self.tainted.get(event.agentId, "")
+        origin = self.contaminated.get(event.spanId)
+        actor = event.agentId
+        while not origin and actor:
+            origin = self.tainted.get(actor, "")
+            actor = self.agents.get(actor, ("", 0, ""))[0]
+        return origin or ""
 
     def _scope_chain(self, agent):
         while agent:

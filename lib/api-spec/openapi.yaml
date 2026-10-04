@@ -15,6 +15,7 @@ paths:
     post:
       operationId: simulateSwarm
       tags: [swarm]
+      description: Synthetic scenarios are public. AI Village requests require verified Clerk authentication plus explicit operator enablement and a reader allowlist; disabled by default.
       summary: Replay a synthetic scenario (enforce) or an AI Village window (report-only) through ASP and Sentinel
       requestBody:
         required: true
@@ -23,6 +24,9 @@ paths:
             schema:
               $ref: "#/components/schemas/RunInput"
       responses:
+        "401": { description: AI Village authentication required or expired }
+        "403": { description: Private AI Village access not approved or untrusted mutation origin }
+        "503": { description: Authentication unavailable or store unavailable }
         "200":
           description: Recorded simulation and forensic report
           content:
@@ -33,6 +37,7 @@ paths:
     get:
       operationId: getSwarmSources
       tags: [swarm]
+      description: Public policy declarations. Private AI Village metadata is withheld unless authenticated and explicitly allowlisted; disabled by default.
       summary: Data sources, indexed AI Village episodes, and ASP policy declarations
       responses:
         "200":
@@ -43,10 +48,13 @@ paths:
                 $ref: "#/components/schemas/SwarmSources"
   /swarm/sessions:
     get:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: listSwarmSessions
       tags: [swarm]
       summary: Live sessions, newest first
       responses:
+        "401": { description: Authentication required or expired }
+        "503": { description: Authentication unavailable or not configured }
         "200":
           description: Session summaries
           content:
@@ -55,6 +63,7 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/SessionSummary" }
     post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: createSwarmSession
       tags: [swarm]
       summary: Start a live session (stateful gateway and Sentinel, enforce mode)
@@ -64,6 +73,10 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/SessionInput" }
       responses:
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "429": { description: Session capacity reached }
+        "503": { description: Authentication unavailable or not configured }
         "201":
           description: Session created
           content:
@@ -71,13 +84,16 @@ paths:
               schema: { $ref: "#/components/schemas/SessionCreated" }
   /swarm/sessions/{sessionId}/stream:
     get:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: streamSwarmSession
       tags: [swarm]
-      summary: "Server-sent events: traces after `after`, with current alerts and revocations"
+      summary: "Owner-only SSE; auth-expired closes the stream at JWT expiry. Reconnect with a fresh snapshot."
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string } }
         - { name: after, in: query, required: false, schema: { type: integer, minimum: 0 } }
       responses:
+        "401": { description: Authentication required or expired }
+        "503": { description: Authentication unavailable or not configured }
         "200":
           description: "text/event-stream; each data line is a SessionStreamMessage"
           content:
@@ -88,7 +104,7 @@ paths:
     post:
       operationId: launchInjectionDemo
       tags: [swarm]
-      summary: Start the poisoned-invoice attack against a fresh live session
+      summary: Start a PUBLIC SYNTHETIC demo in isolated storage; no caller-supplied traces or private session access
       requestBody:
         required: true
         content:
@@ -104,8 +120,77 @@ paths:
                 required: [sessionId]
                 properties:
                   sessionId: { type: string }
+  /swarm/sessions/{sessionId}/sandbox:
+    post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: configureSwarmSandbox
+      tags: [swarm]
+      summary: Initialize server-owned fictional fixtures once before agent actions
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SandboxInput" }
+      responses:
+        "201":
+          description: Disposable sandbox initialized; no filesystem paths are returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SandboxSnapshot" }
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "404": { description: Unknown or expired session }
+        "409": { description: Wrong policy or sandbox already initialized or actions already recorded }
+        "422": { description: Invalid fixture mode or extra fields }
+        "503": { description: Authentication unavailable or not configured }
+    get:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: getSwarmSandbox
+      tags: [swarm]
+      summary: Read owner-private sandbox execution evidence
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Actual fixture ledger, board and successful tool-body list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SandboxSnapshot" }
+        "401": { description: Authentication required or expired }
+        "404": { description: Unknown or expired session }
+        "409": { description: Sandbox is not initialized }
+        "503": { description: Authentication unavailable or not configured }
+  /swarm/sessions/{sessionId}/execute:
+    post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: executeSwarmTool
+      tags: [swarm]
+      summary: Evaluate and execute a registered sandbox tool under one session lock
+      description: Enforcement metadata is server-owned. A denied decision never reaches a tool body. No caller-supplied decision, path, trust label or credential is accepted.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecutionInput" }
+      responses:
+        "200":
+          description: Gateway decision plus actual result or refusal; allowed is permission, not proof of tool success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolOutcome" }
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "404": { description: Unknown or expired session }
+        "409": { description: Sandbox is not initialized }
+        "422": { description: "Unknown tool, invalid arguments or caller-supplied enforcement metadata" }
+        "503": { description: Authentication unavailable or not configured }
   /swarm/sessions/{sessionId}/evaluate:
     post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: evaluateSwarmCall
       tags: [swarm]
       summary: Decide one proposed agent action before it executes
@@ -117,6 +202,9 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CallInput" }
       responses:
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "503": { description: Authentication unavailable or not configured }
         "200":
           description: Decision; allowed=false means the agent must not execute the call
           content:
@@ -125,12 +213,15 @@ paths:
         "404": { description: Unknown or expired session }
   /swarm/sessions/{sessionId}:
     get:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: getSwarmSession
       tags: [swarm]
       summary: Snapshot of a live session as a run record
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string } }
       responses:
+        "401": { description: Authentication required or expired }
+        "503": { description: Authentication unavailable or not configured }
         "200":
           description: Live run record
           content:
@@ -138,14 +229,60 @@ paths:
               schema: { $ref: "#/components/schemas/SwarmRun" }
         "404": { description: Unknown or expired session }
     delete:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
       operationId: deleteSwarmSession
       tags: [swarm]
       summary: End a live session
       parameters:
         - { name: sessionId, in: path, required: true, schema: { type: string } }
       responses:
+        "401": { description: Authentication required or expired }
+        "403": { description: Untrusted cookie mutation origin }
+        "503": { description: Authentication unavailable or not configured }
         "204": { description: Deleted }
         "404": { description: Unknown or expired session }
+  /swarm/demo/sessions:
+    get:
+      operationId: listSwarmDemoSessions
+      tags: [swarm]
+      summary: Public synthetic demonstrations only; never private sessions
+      responses:
+        "200":
+          description: Synthetic demos, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SessionSummary" }
+  /swarm/demo/sessions/{sessionId}:
+    get:
+      operationId: getSwarmDemoSession
+      tags: [swarm]
+      summary: Public synthetic snapshot and report only
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Synthetic demonstration record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwarmRun" }
+        "404": { description: Unknown or expired demo; includes private session IDs }
+  /swarm/demo/sessions/{sessionId}/stream:
+    get:
+      operationId: streamSwarmDemoSession
+      tags: [swarm]
+      summary: Public synthetic SSE only
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: after, in: query, required: false, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: Synthetic SessionStreamMessage data lines
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "404": { description: Unknown or expired demo; includes private session IDs }
   /healthz:
     get:
       operationId: healthCheck
@@ -160,6 +297,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 components:
+  securitySchemes:
+    ClerkCookie:
+      type: apiKey
+      in: cookie
+      name: __session
+      description: Verified Clerk session JWT; browser requests use cookies. Cookie mutations require an approved Origin.
+    ClerkBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Verified Clerk session JWT for remote SDKs; never an arbitrary identity header. All private routes are owner-only and return 404 for non-owners.
   schemas:
     RunInput:
       type: object
@@ -327,12 +475,72 @@ components:
       properties:
         aiVillage: { $ref: "#/components/schemas/VillageSource" }
         policies: { type: object, additionalProperties: { type: object, additionalProperties: true } }
+    SandboxInput:
+      type: object
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [normal, adversarial], default: normal }
+    ExecutionInput:
+      type: object
+      additionalProperties: false
+      required: [agentId, spanId, tool]
+      properties:
+        agentId: { type: string, minLength: 1, maxLength: 120 }
+        spanId: { type: string, minLength: 1, maxLength: 200 }
+        parentId: { type: string, maxLength: 120, default: "" }
+        parentSpanId: { type: string, maxLength: 200, default: "" }
+        tool: { type: string, enum: [read_invoice, read_ledger, transfer_funds, post_status] }
+        arguments:
+          type: object
+          additionalProperties: true
+          description: "Validated against the selected tool: reads accept {}; transfer_funds requires positive integer amount and recipient approved-supplier or sandbox-attacker; post_status requires nonblank text of 1–500 characters. No other keys."
+    SandboxLedger:
+      type: object
+      required: [credits, transfers]
+      properties:
+        credits: { type: integer }
+        transfers:
+          type: array
+          items: { $ref: "#/components/schemas/SandboxTransfer" }
+    SandboxTransfer:
+      type: object
+      required: [amount, recipient]
+      properties:
+        amount: { type: integer }
+        recipient: { type: string, enum: [approved-supplier, sandbox-attacker] }
+    SandboxStatus:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+    SandboxSnapshot:
+      type: object
+      required: [sandboxOnly, mode, initialCredits, ledger, board, actualToolBodiesExecuted]
+      properties:
+        sandboxOnly: { type: boolean, const: true }
+        mode: { type: string, enum: [normal, adversarial] }
+        initialCredits: { type: integer }
+        ledger: { $ref: "#/components/schemas/SandboxLedger" }
+        board: { type: array, items: { $ref: "#/components/schemas/SandboxStatus" } }
+        actualToolBodiesExecuted: { type: array, items: { type: string } }
+    ToolOutcome:
+      type: object
+      required: [decision, allowed, toolBodyExecuted]
+      properties:
+        decision: { $ref: "#/components/schemas/CallDecision" }
+        allowed: { type: boolean }
+        toolBodyExecuted: { type: boolean }
+        result: {}
+        rule: { type: string }
+        reason: { type: string }
+        error: { type: string }
     SessionInput:
       type: object
       properties:
-        policy: { type: string, enum: [mock, ai-village], default: mock }
+        policy: { type: string, enum: [mock, ai-village, agents], default: mock }
         feedbackEnabled: { type: boolean, default: true }
         root: { type: string, default: orchestrator }
+        label: { type: string, maxLength: 200, default: "" }
     SessionSummary:
       type: object
       required: [sessionId, created, policyName, root, label, events, alerts]
@@ -354,6 +562,7 @@ components:
         total: { type: integer }
     DemoInput:
       type: object
+      additionalProperties: false
       properties:
         feedbackEnabled: { type: boolean, default: true }
         pause: { type: number, minimum: 0, maximum: 5, default: 1.2 }
@@ -406,4 +615,3 @@ components:
           type: string
       required:
         - status
-
