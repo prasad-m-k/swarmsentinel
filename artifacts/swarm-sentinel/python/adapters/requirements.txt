@@ -1,0 +1,5 @@
+# Optional adapter environment for examples/claude_agent_sdk_proxy.py and examples/langchain_mcp_proxy.py.
+# Kept apart from the engine: these packages pin mcp 1.x, the engine uses mcp 2.x.
+# python -m venv .venv-adapters && .venv-adapters/bin/pip install -r adapters/requirements.txt
+claude-agent-sdk==0.2.165
+langchain-mcp-adapters==0.3.2
