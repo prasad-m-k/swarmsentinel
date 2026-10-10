@@ -1,6 +1,7 @@
 from collections import defaultdict, deque
 from datetime import datetime
 from asp_policy import argument_violation, host_allowed, tool_matches
+from content_scan import scan, summary
 from models import Trace, Violation
 
 DIRECTIVES = {
@@ -11,6 +12,8 @@ DIRECTIVES = {
     "tools.write_cap": "swarm.write-cap", "semantic.identical_intent": "swarm.repeated-intent",
     "lineage.unknown": "delegation", "lineage.invalid": "delegation", "lineage.max_depth": "delegation.max-depth",
     "lineage.duplicate": "delegation", "tripwire.revoked": "swarm.tripwires", "budget.steps": "swarm.step-budget",
+    "inspection.secrets": "content-inspection.secrets", "inspection.pii": "content-inspection.pii",
+    "inspection.injection": "content-inspection.injection",
 }
 
 
@@ -114,6 +117,9 @@ class ASPGateway:
         label = argument_violation(event.target, event.detail, tools.deny_arguments)
         if label:
             return "drop", "tools.deny_arguments", f"Argument constraint: {label}"
+        refused = self._inspect_arguments(event, advisories)
+        if refused:
+            return refused
         if not host_allowed(event.network, network):
             return "drop", "network.default_deny", f"Network destination {event.network} is outside the allowlist"
         is_write = event.write if event.write is not None else event.target.endswith(".write")
@@ -128,6 +134,21 @@ class ASPGateway:
                                         detail=f"write from a context contaminated by untrusted content (origin {origin})", enforced=False))
         key = (" ".join(event.intent.lower().split()), event.target)
         return self._rate_checks(event, now, key, is_write, event.resource or event.target)
+
+    def _inspect_arguments(self, event, advisories):
+        """Part of the argument-constraint stage: scan the canonical arguments per policy."""
+        inspection = self.policy.inspection
+        if inspection is None or not event.detail or not tool_matches(event.target, inspection.tools):
+            return None
+        for family, action in inspection.arguments.model_dump().items():
+            findings = action != "off" and scan(event.detail, (family,))
+            if not findings:
+                continue
+            if action == "deny":
+                return "drop", f"inspection.{family}", f"Content inspection found {family} in the arguments ({summary(findings)})"
+            advisories.append(Violation(directive=f"content-inspection.{family}", attempted_action=event.target,
+                                        detail=f"arguments contain {family} ({summary(findings)})", enforced=False))
+        return None
 
     def evaluate_and_log(self, event):
         now = datetime.fromisoformat(event.timestamp).timestamp()

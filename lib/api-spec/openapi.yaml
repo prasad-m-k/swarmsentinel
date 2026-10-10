@@ -46,6 +46,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SwarmSources"
+  /swarm/me:
+    get:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: getSwarmPrincipal
+      tags: [swarm]
+      summary: The caller's tenant, role and permissions
+      description: >-
+        Derived from verified Clerk claims only. Users without an organization are their own tenant
+        with the admin role. Organization roles map to viewer, operator or admin (SWARM_ORG_ROLES).
+      responses:
+        "200":
+          description: Caller identity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Principal" }
+        "401": { description: Authentication required or expired }
+        "503": { description: Authentication unavailable or not configured }
   /swarm/sessions:
     get:
       security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
@@ -74,7 +91,7 @@ paths:
             schema: { $ref: "#/components/schemas/SessionInput" }
       responses:
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "429": { description: Session capacity reached }
         "503": { description: Authentication unavailable or not configured }
         "201":
@@ -140,7 +157,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/SandboxSnapshot" }
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "404": { description: Unknown or expired session }
         "409": { description: Wrong policy or sandbox already initialized or actions already recorded }
         "422": { description: Invalid fixture mode or extra fields }
@@ -191,10 +208,40 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ToolOutcome" }
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "404": { description: Unknown or expired session }
         "409": { description: "Sandbox unavailable, idempotency key payload conflict or interrupted execution with unavailable outcome" }
         "422": { description: "Unknown tool, invalid arguments or caller-supplied enforcement metadata" }
+        "503": { description: Authentication unavailable or not configured }
+  /swarm/sessions/{sessionId}/mcp/agents:
+    post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: mintSwarmMcpAgent
+      tags: [swarm]
+      summary: Spawn an agent for MCP proxy mode and issue its credential
+      description: >-
+        Evaluated as a spawn from parentId (the session root when empty), so delegation scope,
+        depth cap and revocation apply. The credential authenticates that one agent at the
+        engine's MCP endpoint (/api/swarm/mcp, Streamable HTTP) and is returned only once.
+        Only sessions whose policy declares an mcp section accept this call. See docs/mcp-proxy.md.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/McpAgentInput" }
+      responses:
+        "201":
+          description: Spawn allowed; credential issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpAgentCredential" }
+        "401": { description: Authentication required or expired }
+        "403": { description: "Spawn refused by the gateway, or untrusted cookie mutation origin" }
+        "404": { description: Unknown session or parent }
+        "409": { description: "Session has no MCP policy, is closed, or the agent ID is invalid" }
+        "422": { description: Invalid request }
         "503": { description: Authentication unavailable or not configured }
   /swarm/sessions/{sessionId}/completion:
     post:
@@ -222,7 +269,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Trace" }
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "404": { description: Unknown session or event }
         "409": { description: "Ineligible, mismatched, duplicate or contradictory receipt" }
         "422": { description: Invalid receipt }
@@ -242,7 +289,7 @@ paths:
             schema: { $ref: "#/components/schemas/CallInput" }
       responses:
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "503": { description: Authentication unavailable or not configured }
         "200":
           description: Decision; allowed=false means the agent must not execute the call
@@ -276,7 +323,7 @@ paths:
         - { name: sessionId, in: path, required: true, schema: { type: string } }
       responses:
         "401": { description: Authentication required or expired }
-        "403": { description: Untrusted cookie mutation origin }
+        "403": { description: Role does not permit this action or untrusted cookie mutation origin }
         "503": { description: Authentication unavailable or not configured }
         "204": { description: Deleted }
         "404": { description: Unknown or expired session }
@@ -386,7 +433,7 @@ components:
         executionError: { type: string, enum: [tool_execution_failed], description: "Fixed safe error code only; no exception details or tool results." }
         executionProvenance: { type: string, enum: [engine-observed, caller-reported], description: "Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows." }
         policyVersion: { type: integer }
-        source: { type: string, enum: [synthetic, ai-village, live] }
+        source: { type: string, enum: [synthetic, ai-village, live, mcp] }
         sourceRef: { type: string, description: "table:row-id in the source dataset" }
         detail: { type: string }
         network: { type: string }
@@ -587,10 +634,27 @@ components:
         rule: { type: string }
         reason: { type: string }
         error: { type: string }
+    McpAgentInput:
+      type: object
+      additionalProperties: false
+      required: [agentId]
+      properties:
+        agentId: { type: string, minLength: 1, maxLength: 80, pattern: "^[A-Za-z0-9._-]+$" }
+        parentId: { type: string, maxLength: 120, default: "", description: Session root when empty }
+        scope: { type: array, items: { type: string }, default: [], description: Tool patterns delegated to the agent; empty inherits the parent's }
+    McpAgentCredential:
+      type: object
+      required: [agentId, parentId, credential, endpoint, decision]
+      properties:
+        agentId: { type: string }
+        parentId: { type: string }
+        credential: { type: string, description: Bearer credential for the MCP endpoint. Shown once; store it like a secret }
+        endpoint: { type: string }
+        decision: { $ref: "#/components/schemas/CallDecision" }
     SessionInput:
       type: object
       properties:
-        policy: { type: string, enum: [mock, ai-village, agents], default: mock }
+        policy: { type: string, enum: [mock, ai-village, agents, mcp-demo], default: mock }
         feedbackEnabled: { type: boolean, default: true }
         root: { type: string, default: orchestrator }
         label: { type: string, maxLength: 200, default: "" }
@@ -605,6 +669,14 @@ components:
         spanId: { type: string }
         target: { type: string }
         admittedAt: { type: string, format: date-time, description: Server admission time, not the caller's event timestamp }
+    Principal:
+      type: object
+      required: [subject, tenant, role, permissions]
+      properties:
+        subject: { type: string }
+        tenant: { type: string, description: "org:<id> or user:<subject>" }
+        role: { type: string, enum: [viewer, operator, admin] }
+        permissions: { type: array, items: { type: string } }
     SessionSummary:
       type: object
       required: [sessionId, created, policyName, root, label, events, alerts]

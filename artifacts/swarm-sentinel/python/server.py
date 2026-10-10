@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -18,16 +19,35 @@ from village import store
 from village.normalize import PERMA_COMPUTER_USE, pacific_day
 from auth import Principal, require_principal, still_valid, village_access
 from sandbox import ExecutionInput, SandboxInput
+from mcp_proxy import front as mcp_front
+import persistence
+from starlette.routing import Route
 from pydantic import ValidationError
 
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async with MCP_ENDPOINT.run():
+        try:
+            yield
+        finally:
+            await asyncio.gather(*(s.mcp.pool.aclose() for s in list(SESSIONS.sessions.values()) if s.mcp),
+                                 return_exceptions=True)
+
+
 app = FastAPI(title="SwarmSentinel Python Engine", docs_url="/api/swarm/docs",
-              openapi_url="/api/swarm/openapi.json", redoc_url=None)
+              openapi_url="/api/swarm/openapi.json", redoc_url=None, lifespan=lifespan)
 
 SYNTHETIC = "Synthetic sample traces. Not AI Village data or a real incident replay."
 VILLAGE = "AI Village dataset replay (historical records, report-only). Decisions are counterfactual."
 LIVE = "Owner-private Live: authorization, engine-observed outcomes, and caller-reported completion are recorded separately."
-SESSIONS = SessionStore()
+# SWARM_STATE_DB makes private sessions durable (persistence.py); unset keeps them in memory only.
+SESSIONS = SessionStore(state=persistence.from_env())
 DEMOS = SessionStore(limit=20)
+# MCP proxy mode (docs/mcp-proxy.md): agents authenticate with engine-issued credentials, not Clerk.
+MCP_ENDPOINT = mcp_front.build(lambda session_id: SESSIONS.get(session_id))
+app.router.routes.append(Route("/api/swarm/mcp", endpoint=MCP_ENDPOINT))
 
 
 @app.exception_handler(RequestValidationError)
@@ -141,19 +161,36 @@ def _run(run_id, scenario, source, provenance, gateway, sentinel, policy_name, p
     return run
 
 
-def _session(session_id, principal):
+def _session(session_id, principal, permission="session.read"):
+    """Foreign and missing sessions both answer 404; a known session the role may not use answers 403."""
     session = SESSIONS.get(session_id)
-    if session is None or session.owner != principal.subject:
+    if session is None or session.tenant != principal.tenant_id:
         raise HTTPException(404, "Unknown or expired session")
+    if permission == "session.delete" and session.owner != principal.subject:
+        permission = "session.delete.any"
+    elif permission == "session.delete":
+        permission = "session.delete.own"
+    if not principal.can(permission):
+        raise HTTPException(403, f"Role '{principal.role}' does not permit this action")
     return session
+
+
+def _require(principal, permission):
+    if not principal.can(permission):
+        raise HTTPException(403, f"Role '{principal.role}' does not permit this action")
+
+
+@app.get("/api/swarm/me")
+def whoami(principal: Principal = Depends(require_principal)):
+    """The caller's tenant, role and permissions, as derived from verified claims."""
+    return {"subject": principal.subject, "tenant": principal.tenant_id, "role": principal.role,
+            "permissions": sorted(principal.permissions)}
 
 
 @app.get("/api/swarm/sessions")
 def list_sessions(principal: Principal = Depends(require_principal)):
     """Live sessions, newest first, so the dashboard can attach to one."""
-    with SESSIONS.lock:
-        sessions = [s for s in SESSIONS.sessions.values() if s.owner == principal.subject]
-    return _summaries(sessions)
+    return SESSIONS.summaries(principal.tenant_id)
 
 
 def _summaries(sessions):
@@ -167,8 +204,9 @@ def _summaries(sessions):
 
 @app.post("/api/swarm/sessions", status_code=201)
 def create_session(spec: SessionInput, principal: Principal = Depends(require_principal)):
+    _require(principal, "session.create")
     try:
-        session = SESSIONS.create(spec, owner=principal.subject)
+        session = SESSIONS.create(spec, owner=principal.subject, tenant=principal.tenant_id)
     except OverflowError:
         raise HTTPException(429, "Session capacity reached; delete an owned session before creating another")
     return {"sessionId": session.id, "policyName": spec.policy, "root": spec.root,
@@ -179,14 +217,14 @@ def create_session(spec: SessionInput, principal: Principal = Depends(require_pr
 @app.post("/api/swarm/sessions/{session_id}/evaluate")
 def evaluate(session_id: str, call: CallInput, principal: Principal = Depends(require_principal)):
     """Decide one proposed action before the agent runs it. allowed=false means: do not execute."""
-    return _session(session_id, principal).evaluate(call)
+    return _session(session_id, principal, "session.act").evaluate(call)
 
 
 @app.post("/api/swarm/sessions/{session_id}/sandbox", status_code=201)
 def configure_sandbox(session_id: str, spec: SandboxInput, principal: Principal = Depends(require_principal)):
     """Create fixed fictional fixtures only; never accept a directory or launch inference."""
     try:
-        return _session(session_id, principal).configure_sandbox(spec.mode)
+        return _session(session_id, principal, "session.act").configure_sandbox(spec.mode)
     except ValueError as e:
         raise HTTPException(409, str(e))
 
@@ -203,7 +241,7 @@ def sandbox_snapshot(session_id: str, principal: Principal = Depends(require_pri
 def execute_tool(session_id: str, spec: ExecutionInput, principal: Principal = Depends(require_principal)):
     """Authenticate even replays; exact keyed retries return the original outcome."""
     try:
-        session = _session(session_id, principal)
+        session = _session(session_id, principal, "session.act")
         with session.lock:
             if not still_valid(principal):
                 raise HTTPException(401, "Authentication expired")
@@ -214,9 +252,37 @@ def execute_tool(session_id: str, spec: ExecutionInput, principal: Principal = D
         raise HTTPException(409, str(e))
 
 
+class McpAgentInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    agentId: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
+    parentId: str = Field(default="", max_length=120)
+    scope: list[str] = []
+
+
+@app.post("/api/swarm/sessions/{session_id}/mcp/agents", status_code=201)
+def mint_mcp_agent(session_id: str, spec: McpAgentInput, principal: Principal = Depends(require_principal)):
+    """Spawn an agent through the gateway and return its MCP credential once. It is never shown again."""
+    session = _session(session_id, principal, "session.act")
+    if session.mcp is None:
+        raise HTTPException(409, "This session's policy declares no MCP servers")
+    with session.lock:
+        if not still_valid(principal):
+            raise HTTPException(401, "Authentication expired")
+        try:
+            decision, credential = session.mcp.mint(spec.agentId, spec.parentId or session.spec.root, spec.scope)
+        except LookupError as e:
+            raise HTTPException(404, str(e))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+    if credential is None:
+        raise HTTPException(403, f"Spawn refused by the ASP gateway ({decision['rule']}): {decision['reason']}")
+    return {"agentId": spec.agentId, "parentId": spec.parentId or session.spec.root,
+            "credential": credential, "endpoint": "/api/swarm/mcp", "decision": decision}
+
+
 @app.post("/api/swarm/sessions/{session_id}/completion")
 def complete_tool(session_id: str, receipt: CompletionReceipt, principal: Principal = Depends(require_principal)):
-    session = _session(session_id, principal)
+    session = _session(session_id, principal, "session.act")
     with session.lock:
         if not still_valid(principal):
             raise HTTPException(401, "Authentication expired")
@@ -257,7 +323,7 @@ def _stream(session_store, session_id, after, principal=None):
         evidence_seen = {}
         warnings_seen = None
         while (s := session_store.get(session_id)) is not None:
-            if principal and (not still_valid(principal) or s.owner != principal.subject):
+            if principal and (not still_valid(principal) or s.tenant != principal.tenant_id):
                 yield "event: auth-expired\ndata: {}\n\n"
                 return
             with s.lock:
@@ -317,7 +383,7 @@ def launch_injection_demo(spec: DemoInput):
 
 @app.delete("/api/swarm/sessions/{session_id}", status_code=204)
 def delete_session(session_id: str, principal: Principal = Depends(require_principal)):
-    _session(session_id, principal)
+    _session(session_id, principal, "session.delete")
     if not SESSIONS.delete(session_id):
         raise HTTPException(404, f"Unknown or expired session {session_id}")
     return Response(status_code=204)

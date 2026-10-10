@@ -3,6 +3,7 @@
 Unlike /simulate (a recorded stream replayed in one request), a live session keeps gateway and
 Sentinel state between calls, so every call is decided before the agent executes it.
 """
+import os
 import threading
 import time
 import json
@@ -17,17 +18,18 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from asp_gateway import ASPGateway
 from asp_policy import ASPPolicy
-from models import Event
+from models import Event, Violation
 from sentinel import Sentinel
 from simulator import intent_vector
 from sandbox import ExecutionInput, REGISTRY, Sandbox
 
-MAX_SESSIONS = 200
+MAX_SESSIONS = int(os.environ.get("SWARM_MAX_SESSIONS", "200"))
+PER_TENANT = int(os.environ.get("SWARM_MAX_SESSIONS_PER_TENANT", "20"))
 
 
 class SessionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    policy: Literal["mock", "ai-village", "agents"] = "mock"
+    policy: Literal["mock", "ai-village", "agents", "mcp-demo"] = "mock"
     feedbackEnabled: bool = True
     root: str = Field(default="orchestrator", min_length=1, max_length=120)
     label: str = Field(default="", max_length=200)
@@ -55,11 +57,15 @@ class CallInput(BaseModel):
 
 
 class LiveSession:
-    def __init__(self, spec: SessionInput, owner=None):
-        self.id = str(uuid4())
+    def __init__(self, spec: SessionInput, owner=None, policy: Optional[ASPPolicy] = None, tenant=None,
+                 session_id=None, created=None):
+        self.id = session_id or str(uuid4())
         self.owner = owner
+        # Access is decided per tenant; a user without an organization is their own tenant.
+        self.tenant = tenant or (f"user:{owner}" if owner is not None else None)
         self.spec = spec
-        self.policy = ASPPolicy.load(spec.policy)
+        # HTTP callers choose a policy by name; tests and embedders may pass a validated policy.
+        self.policy = policy or ASPPolicy.load(spec.policy)
         self.settings = SimpleNamespace(feedbackEnabled=spec.feedbackEnabled)
         self.gateway = ASPGateway(self.settings, self.policy, mode="enforce", root=spec.root)
         self.sentinel = Sentinel(self.policy)
@@ -74,11 +80,18 @@ class LiveSession:
         # Server admission time only: caller timestamps cannot age this warning.
         self.completion_pending = {}
         self.closed = False
-        self.created = datetime.now(timezone.utc).isoformat()
+        self.created = created or datetime.now(timezone.utc).isoformat()
+        # Durable sessions append every state change here (persistence.py); None keeps memory-only.
+        self.journal = None
         self.timings_ms = deque(maxlen=10_000)
         self.label = spec.label
+        # MCP proxy mode: only for policies that declare downstream servers (docs/mcp-proxy.md).
+        self.mcp = None
+        if self.policy.mcp is not None:
+            from mcp_proxy.broker import ProxyBroker
+            self.mcp = ProxyBroker(self)
 
-    def evaluate(self, call: CallInput, *, completion_receipt=True):
+    def evaluate(self, call: CallInput, *, completion_receipt=True, source="live"):
         with self.lock:
             if self.closed:
                 raise ValueError("Session is closed")
@@ -86,7 +99,7 @@ class LiveSession:
             event = Event(
                 id=f"live-{len(self.gateway.telemetry) + 1:05d}",
                 timestamp=call.timestamp or datetime.now(timezone.utc).isoformat(),
-                channel="in_band", source="live", intentVector=intent_vector(call.intent or call.target), depth=0,
+                channel="in_band", source=source, intentVector=intent_vector(call.intent or call.target), depth=0,
                 **call.model_dump(exclude={"timestamp"}),
             )
             trace = self.gateway.evaluate_and_log(event)
@@ -96,6 +109,8 @@ class LiveSession:
                 trace.executionProvenance = "engine-observed"
             before = len(self.sentinel.alerts)
             self.sentinel.ingest(trace, self.gateway)
+            self._log("evaluate", {"call": call.model_dump(exclude={"timestamp"}), "timestamp": event.timestamp,
+                                   "source": source})
             elapsed = (time.perf_counter() - started) * 1000
             self.timings_ms.append(elapsed)
             response = dict(
@@ -115,6 +130,51 @@ class LiveSession:
                 )
                 response["completionToken"] = token
             return response
+
+    def _log(self, kind, payload):
+        if self.journal is not None:
+            self.journal(kind, payload)
+
+    def record_evidence(self, trace):
+        """Journal outcome evidence written onto an existing row after evaluation."""
+        self._log("evidence", {"id": trace.id, "executionStatus": trace.executionStatus,
+                               "toolBodyExecuted": trace.toolBodyExecuted, "executionError": trace.executionError,
+                               "executionProvenance": trace.executionProvenance,
+                               "violations": [v.model_dump() for v in trace.violations]})
+
+    def pin_taint(self, agent, origin, span="", group=False):
+        """Taint set outside the gateway's own rules (engine-run untrusted reads, inspected results)."""
+        gateway = self.gateway
+        if span:
+            gateway.contaminated.setdefault(span, origin)
+        gateway.tainted.setdefault(agent, origin)
+        if group:
+            gateway.taint_groups[origin].add(agent)
+        self._log("taint", {"agent": agent, "origin": origin, "span": span, "group": group})
+
+    @classmethod
+    def restore(cls, row, journal):
+        """Rebuild a durable session by replaying its journal. Nothing is re-journaled during replay."""
+        session_id, tenant, owner, created, spec, policy = row[:6]
+        session = cls(SessionInput.model_validate_json(spec), owner, ASPPolicy.model_validate(json.loads(policy)),
+                      tenant=tenant, session_id=session_id, created=created)
+        rows = {}
+        for kind, payload in journal:
+            if kind == "evaluate":
+                session.evaluate(CallInput(**payload["call"], timestamp=payload["timestamp"]),
+                                 completion_receipt=False, source=payload["source"])
+                rows[session.gateway.telemetry[-1].id] = session.gateway.telemetry[-1]
+            elif kind == "evidence":
+                trace = rows[payload.pop("id")]
+                trace.violations = [Violation(**v) for v in payload.pop("violations")]
+                for name, value in payload.items():
+                    setattr(trace, name, value)
+            elif kind == "taint":
+                session.pin_taint(**payload)
+            elif kind == "mcp_agent" and session.mcp is not None:
+                session.mcp.register(payload)
+        # Sandbox fixtures and downstream workspaces are not durable; a restored session has neither.
+        return session
 
     def completion_warnings(self):
         """Visibility only; do not change traces, detector state or retry receipts."""
@@ -144,6 +204,7 @@ class LiveSession:
             trace.executionProvenance = "caller-reported"
             if receipt.executionStatus == "failed":
                 trace.executionError = "tool_execution_failed"
+            self.record_evidence(trace)
             del self.completion_tokens[trace.id]
             self.completion_pending.pop(trace.id, None)
             return trace.recorder_dump()
@@ -155,6 +216,7 @@ class LiveSession:
             if self.sandbox is not None or self.gateway.telemetry:
                 raise ValueError("Initialize the sandbox once, before any agent actions")
             self.sandbox = Sandbox(mode)
+            self._log("sandbox", {"mode": mode})
             return self.sandbox.snapshot()
 
     def sandbox_snapshot(self):
@@ -199,11 +261,12 @@ class LiveSession:
             outcome = {"decision": decision, "allowed": decision["allowed"], "toolBodyExecuted": False}
             if not decision["allowed"]:
                 outcome.update(rule=decision["rule"], reason=decision["reason"])
+                self.record_evidence(trace)
                 return self._remember_execution(request.idempotencyKey, fingerprint, outcome)
             # Pin untrusted read contamination to the admitted actor too: a caller cannot
             # obtain a clean context by making up a fresh span after reading the fixture.
             if options.get("reads") == "untrusted":
-                self.gateway.tainted.setdefault(request.agentId, decision["taintOrigin"])
+                self.pin_taint(request.agentId, decision["taintOrigin"])
             # If execution is interrupted outside ordinary exception handling,
             # retain body-entry evidence without falsely claiming not-started.
             trace.toolBodyExecuted = True
@@ -220,6 +283,7 @@ class LiveSession:
             else:
                 outcome.update(toolBodyExecuted=True, result=result)
                 trace.executionStatus = "succeeded"
+            self.record_evidence(trace)
             return self._remember_execution(request.idempotencyKey, fingerprint, outcome)
 
     def _remember_execution(self, key, fingerprint, outcome):
@@ -227,6 +291,7 @@ class LiveSession:
         return deepcopy(outcome)
 
     def close(self):
+        """Stops processes and forgets in-memory secrets. A durable session's journal is untouched."""
         with self.lock:
             self.closed = True
             self.execution_outcomes.clear()
@@ -234,6 +299,9 @@ class LiveSession:
             self.completion_pending.clear()
             if self.sandbox:
                 self.sandbox.close()
+            if self.mcp:
+                self.mcp.close()
+            self.journal = None
 
 
 def json_arguments(arguments):
@@ -241,37 +309,94 @@ def json_arguments(arguments):
 
 
 class SessionStore:
-    """In-memory and bounded: the oldest session is evicted once MAX_SESSIONS is reached."""
+    """Bounded session cache.
 
-    def __init__(self, limit=MAX_SESSIONS):
+    Memory-only (state=None): the oldest session is evicted once the limit is reached, and private
+    sessions are refused at capacity rather than evicting another owner's traces.
+    Durable (state=StateStore): every private session is journaled, so memory is only a cache.
+    The least recently used session is evicted and replayed from the journal on its next use.
+    """
+
+    def __init__(self, limit=MAX_SESSIONS, state=None):
         self.limit = limit
+        self.state = state
         self.sessions = OrderedDict()
         self.lock = threading.Lock()
 
-    def create(self, spec, owner=None):
-        session = LiveSession(spec, owner)
+    def _attach(self, session):
+        state = self.state
+        session.journal = lambda kind, payload: state.append(
+            session.id, kind, payload, len(session.gateway.telemetry), len(session.sentinel.alerts))
+
+    def _cache(self, session):
+        self.sessions[session.id] = session
+        while len(self.sessions) > self.limit:
+            _, evicted = self.sessions.popitem(last=False)
+            if self.state is not None and evicted.journal is not None:
+                # Still durable: stop its processes, keep its journal and credentials.
+                with evicted.lock:
+                    evicted.close()
+
+    def create(self, spec, owner=None, tenant=None):
+        session = LiveSession(spec, owner, tenant=tenant)
         with self.lock:
-            if owner is not None and (len(self.sessions) >= self.limit or
-                                      sum(s.owner == owner for s in self.sessions.values()) >= 20):
+            if owner is not None and self.state is not None:
+                if self.state.count(session.tenant) >= PER_TENANT:
+                    raise OverflowError("Private session capacity reached")
+                self.state.create(session)
+                self._attach(session)
+            elif owner is not None and (len(self.sessions) >= self.limit or
+                                        sum(s.tenant == session.tenant for s in self.sessions.values()) >= PER_TENANT):
                 # Private traffic must not evict another owner's traces.
                 raise OverflowError("Private session capacity reached")
-            self.sessions[session.id] = session
-            while len(self.sessions) > self.limit:
-                self.sessions.popitem(last=False)
+            self._cache(session)
         return session
 
     def get(self, session_id):
         with self.lock:
-            return self.sessions.get(session_id)
+            session = self.sessions.get(session_id)
+            if session is not None:
+                self.sessions.move_to_end(session_id)
+                return session
+            if self.state is None:
+                return None
+            row = self.state.row(session_id)
+            if row is None:
+                return None
+            session = LiveSession.restore(row, self.state.journal(session_id))
+            self._attach(session)
+            self._cache(session)
+            return session
+
+    def summaries(self, tenant):
+        """Rows for listings, including durable sessions that are not loaded right now."""
+        with self.lock:
+            loaded = {s.id: s for s in self.sessions.values() if s.tenant == tenant}
+            rows = self.state.rows(tenant) if self.state is not None else []
+        result = []
+        for s in loaded.values():
+            with s.lock:
+                result.append(dict(sessionId=s.id, created=s.created, policyName=s.spec.policy, root=s.spec.root,
+                                   label=s.label, events=len(s.gateway.telemetry), alerts=len(s.sentinel.alerts)))
+        for session_id, _, _, created, spec, events, alerts in rows:
+            if session_id not in loaded:
+                spec = SessionInput.model_validate_json(spec)
+                result.append(dict(sessionId=session_id, created=created, policyName=spec.policy, root=spec.root,
+                                   label=spec.label, events=events, alerts=alerts))
+        return sorted(result, key=lambda r: r["created"], reverse=True)
 
     def delete(self, session_id):
         with self.lock:
             session = self.sessions.get(session_id)
-            if session is None:
+            durable = self.state is not None and self.state.row(session_id) is not None
+            if session is None and not durable:
                 return False
-            # Close before removal while holding its execution lock. Requests which
-            # already fetched this object cannot dispatch after deletion completes.
-            with session.lock:
-                session.close()
-                self.sessions.pop(session_id)
+            if session is not None:
+                # Close before removal while holding its execution lock. Requests which
+                # already fetched this object cannot dispatch after deletion completes.
+                with session.lock:
+                    session.close()
+                    self.sessions.pop(session_id)
+            if durable:
+                self.state.delete(session_id)
             return True

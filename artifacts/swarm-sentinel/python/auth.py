@@ -14,10 +14,52 @@ cookie_security = APIKeyCookie(name="__session", scheme_name="ClerkCookie", auto
 bearer_security = HTTPBearer(scheme_name="ClerkBearer", auto_error=False)
 
 
+# Role -> permissions. Personal tenants make their user "admin", which is the pre-RBAC behaviour.
+ROLES = {
+    "viewer": frozenset({"session.read"}),
+    "operator": frozenset({"session.read", "session.create", "session.act", "session.delete.own"}),
+    "admin": frozenset({"session.read", "session.create", "session.act", "session.delete.own", "session.delete.any"}),
+}
+DEFAULT_ORG_ROLES = {"admin": "admin", "member": "operator"}
+
+
 @dataclass(frozen=True)
 class Principal:
     subject: str
     expires: float
+    # Empty tenant means the user's personal tenant. Tenants are derived from verified claims only.
+    tenant: str = ""
+    role: str = "admin"
+
+    @property
+    def tenant_id(self):
+        return self.tenant or f"user:{self.subject}"
+
+    @property
+    def permissions(self):
+        return ROLES.get(self.role, frozenset())
+
+    def can(self, permission):
+        return permission in self.permissions
+
+
+def org_role_map():
+    """SWARM_ORG_ROLES="admin=admin,member=operator,auditor=viewer" maps organization roles to engine roles."""
+    configured = os.environ.get("SWARM_ORG_ROLES", "")
+    pairs = (item.split("=", 1) for item in configured.split(",") if "=" in item)
+    mapping = {k.strip(): v.strip() for k, v in pairs if v.strip() in ROLES} if configured else {}
+    return mapping or DEFAULT_ORG_ROLES
+
+
+def tenancy(claims):
+    """(tenant, role) from verified Clerk claims. Supports v2 ("o": {id, rol}) and v1 (org_id, org_role) tokens."""
+    org = claims.get("o") if isinstance(claims.get("o"), dict) else {}
+    org_id = org.get("id") or claims.get("org_id")
+    if not isinstance(org_id, str) or not org_id:
+        return "", "admin"
+    raw = org.get("rol") or claims.get("org_role") or ""
+    role = org_role_map().get(str(raw).removeprefix("org:"), "viewer")
+    return f"org:{org_id}", role
 
 
 @lru_cache(maxsize=4)
@@ -70,7 +112,8 @@ def require_principal(request: Request,
         if request.method not in ("GET", "HEAD", "OPTIONS") and not authorization:
             if request.headers.get("origin") not in parties:
                 raise HTTPException(403, "Untrusted request origin")
-        return Principal(claims["sub"], float(claims["exp"]))
+        tenant, role = tenancy(claims)
+        return Principal(claims["sub"], float(claims["exp"]), tenant, role)
     except jwt.PyJWKClientConnectionError:
         raise HTTPException(503, "Authentication service unavailable")
     except (jwt.PyJWTError, TypeError, ValueError, KeyError):

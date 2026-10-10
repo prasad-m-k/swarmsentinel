@@ -13,6 +13,11 @@ Current release: `v2.0.0`. Research basis: `docs/source-materials/agent-security
 |---|---|
 | `artifacts/swarm-sentinel/python/` | FastAPI engine: `asp_policy.py`, `asp_gateway.py`, `sentinel.py`, `pipeline.py`, `reporter.py`, `server.py`, `models.py`, `simulator.py` |
 | `artifacts/swarm-sentinel/python/policies/` | `mock.asp.json` (synthetic), `ai-village.asp.json` (replay). Policy lives here, not in code |
+| `artifacts/swarm-sentinel/python/mcp_proxy/` | MCP proxy mode: engine-hosted MCP endpoint (`/api/swarm/mcp`), credentials, downstream stdio servers. Design in `docs/mcp-proxy-design.md` |
+| `artifacts/swarm-sentinel/python/content_scan.py` | Secrets, PII and injection-marker detectors for policy `inspection` (`docs/content-inspection.md`) |
+| `artifacts/swarm-sentinel/python/persistence.py` | Optional SQLite journal for durable sessions, enabled by `SWARM_STATE_DB` (`docs/durable-state.md`) |
+| `artifacts/swarm-sentinel/python/adapters/` | Stdlib connection helpers for Claude Agent SDK, LangChain and MCP clients; the SDKs themselves live in `.venv-adapters` (`docs/adapters.md`) |
+| `artifacts/swarm-sentinel/python/tests/mcp_sample/` | Sample MCP server and test policy used by `test_mcp_gateway.py` and `test_content_inspection.py` |
 | `artifacts/swarm-sentinel/python/village/` | AI Village adapter: `normalize.py`, `ingest.py`, `scan.py`, `store.py` |
 | `artifacts/swarm-sentinel/python/tests/` | `test_engine.py`, hand-written fixtures only |
 | `artifacts/swarm-sentinel/src/pages/dashboard.tsx` | The whole React dashboard |
@@ -40,6 +45,12 @@ SWARM_ENGINE_URL=http://127.0.0.1:8000 PORT=5173 BASE_PATH=/ npx -y pnpm@10 --fi
 ../../../.venv/bin/python examples/live_injection_demo.py [--remote http://127.0.0.1:8000]
 ../../../.venv/bin/python examples/bench_latency.py
 
+# Durable sessions (optional; file must stay on private storage, data/ is gitignored)
+SWARM_STATE_DB=data/state/swarm.db .venv/bin/python -m uvicorn server:app --app-dir artifacts/swarm-sentinel/python --host 127.0.0.1 --port 8000
+
+# Adapter SDKs pin mcp 1.x (engine uses 2.x), so they get their own environment; test_adapters interop skips without it
+python3.13 -m venv .venv-adapters && .venv-adapters/bin/pip install -r artifacts/swarm-sentinel/python/adapters/requirements.txt
+
 # After any OpenAPI change
 npx -y pnpm@10 --filter @workspace/api-spec run codegen
 npx -y pnpm@10 run typecheck
@@ -59,6 +70,9 @@ macOS caveat: `pnpm-workspace.yaml` strips every darwin native binary (Replit is
 - New `Event`/`Trace` fields must have defaults so `samples/*.json` still validate.
 - Repeated interactions are one edge with an incrementing `weight` (Sentinel `graph`, windowed `comm_graph`, dashboard radar). Never add parallel edges; detection density counts distinct pairs, not weight.
 - API changes are additive. When a Pydantic model changes, update its twin schema in `openapi.yaml` and run codegen; the two are maintained by hand.
+- Access is per tenant (`user:<sub>` or `org:<id>` from verified Clerk claims) with viewer, operator and admin roles; `_session(..., permission)` in `server.py` is the single check. Foreign sessions answer 404, forbidden actions 403.
+- Durable sessions replay their journal, so any new state change made outside `ASPGateway.evaluate_and_log` must be journaled (`LiveSession.record_evidence`, `pin_taint`, `_log`) or it will be lost on restart.
+- MCP proxy tool names are `<server>__<tool>`; server names may not contain `_`.
 - The `village` root in replays is a registry node, not an actor: it is never revoked (`root_is_actor=False`). The synthetic `orchestrator` is an actor and can be.
 
 ## Data handling (hard rules)
