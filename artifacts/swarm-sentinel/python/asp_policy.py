@@ -4,7 +4,7 @@ import re
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 POLICY_DIR = Path(__file__).parent / "policies"
 
@@ -77,6 +77,59 @@ class Swarm(_Strict):
     tripwires: Tripwires = Field(default_factory=Tripwires)
 
 
+class McpTool(_Strict):
+    """Enforcement semantics for one downstream tool, declared by the operator, never by the server."""
+    target: str = Field(pattern=r"^[A-Za-z0-9_.:*-]+$")
+    write: bool
+    reads: Literal["", "high", "medium", "low", "untrusted"] = ""
+    resource: str = ""
+    # Argument whose value is the network destination (a URL or host), checked against network.allow.
+    network_argument: str = Field(default="", alias="network-argument")
+
+
+class McpServer(_Strict):
+    # Placeholders: {python} engine interpreter, {fixtures} bundled fixtures, {workspace} per-session directory.
+    command: str = Field(min_length=1)
+    args: list[str] = []
+    tools: dict[str, McpTool]
+
+
+class Mcp(_Strict):
+    servers: dict[str, McpServer]
+
+    @field_validator("servers")
+    @classmethod
+    def _names(cls, servers):
+        # Server names never contain "_", so "<server>__<tool>" splits unambiguously.
+        for name, server in servers.items():
+            if not re.fullmatch(r"[A-Za-z0-9-]{1,40}", name):
+                raise ValueError(f"MCP server name {name!r} must use letters, digits and '-' (at most 40)")
+            for tool in server.tools:
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tool):
+                    raise ValueError(f"MCP tool name {tool!r} must use letters, digits, '_' and '-' (at most 64)")
+        return servers
+
+
+class ArgumentInspection(_Strict):
+    secrets: Literal["off", "report", "deny"] = "off"
+    pii: Literal["off", "report", "deny"] = "off"
+    injection: Literal["off", "report", "deny"] = "off"
+
+
+class ResultInspection(_Strict):
+    secrets: Literal["off", "report", "redact", "block"] = "off"
+    pii: Literal["off", "report", "redact", "block"] = "off"
+    # taint: injection markers in a result contaminate the caller, as an untrusted read would.
+    injection: Literal["off", "report", "taint", "block"] = "off"
+
+
+class Inspection(_Strict):
+    """Pattern-based scanning (content_scan.py). Heuristic evidence, not detection of every attack."""
+    tools: list[str] = ["*"]
+    arguments: ArgumentInspection = Field(default_factory=ArgumentInspection)
+    results: ResultInspection = Field(default_factory=ResultInspection)
+
+
 class ASPPolicy(_Strict):
     asp_version: Literal["1.0"] = Field(alias="asp-version")
     description: str = ""
@@ -86,6 +139,9 @@ class ASPPolicy(_Strict):
     delegation: Delegation
     reporting: Reporting
     swarm: Swarm = Field(default_factory=Swarm)
+    # MCP proxy mode (docs/mcp-proxy.md): downstream servers and the tools they may expose.
+    mcp: Mcp | None = None
+    inspection: Inspection | None = None
 
     @classmethod
     def load(cls, name):
@@ -102,7 +158,8 @@ class ASPPolicy(_Strict):
         return policy
 
     def declaration(self):
-        return self.model_dump(by_alias=True)
+        # Policies without the newer optional sections keep their earlier declaration unchanged.
+        return self.model_dump(by_alias=True, exclude={name for name in ("mcp", "inspection") if getattr(self, name) is None})
 
 
 def tool_matches(tool, patterns):

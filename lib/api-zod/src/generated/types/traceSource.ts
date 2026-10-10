@@ -13,4 +13,5 @@ export const TraceSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
   live: 'live',
+  mcp: 'mcp',
 } as const;

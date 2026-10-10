@@ -27,6 +27,9 @@ import type {
   ExecutionInput,
   HealthStatus,
   LaunchInjectionDemo202,
+  McpAgentCredential,
+  McpAgentInput,
+  Principal,
   RunInput,
   SandboxInput,
   SandboxSnapshot,
@@ -223,6 +226,84 @@ export function useGetSwarmSources<TData = Awaited<ReturnType<typeof getSwarmSou
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSwarmSourcesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSwarmPrincipalUrl = () => {
+
+
+
+
+  return `/api/swarm/me`
+}
+
+/**
+ * Derived from verified Clerk claims only. Users without an organization are their own tenant with the admin role. Organization roles map to viewer, operator or admin (SWARM_ORG_ROLES).
+ * @summary The caller's tenant, role and permissions
+ */
+export const getSwarmPrincipal = async ( options?: Parameters<typeof customFetch>[1]): Promise<Principal> => {
+
+  return customFetch<Principal>(getGetSwarmPrincipalUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSwarmPrincipalQueryKey = () => {
+    return [
+    `/api/swarm/me`
+    ] as const;
+    }
+
+
+export const getGetSwarmPrincipalQueryOptions = <TData = Awaited<ReturnType<typeof getSwarmPrincipal>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmPrincipal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSwarmPrincipalQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSwarmPrincipal>>> = ({ signal }) => getSwarmPrincipal({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSwarmPrincipal>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSwarmPrincipalQueryResult = NonNullable<Awaited<ReturnType<typeof getSwarmPrincipal>>>
+export type GetSwarmPrincipalQueryError = ErrorType<void>
+
+
+/**
+ * @summary The caller's tenant, role and permissions
+ */
+
+export function useGetSwarmPrincipal<TData = Awaited<ReturnType<typeof getSwarmPrincipal>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSwarmPrincipal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSwarmPrincipalQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -831,6 +912,96 @@ export const useExecuteSwarmTool = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getExecuteSwarmToolMutationOptions(options));
+    }
+
+export const getMintSwarmMcpAgentUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}/mcp/agents`
+}
+
+/**
+ * Evaluated as a spawn from parentId (the session root when empty), so delegation scope, depth cap and revocation apply. The credential authenticates that one agent at the engine's MCP endpoint (/api/swarm/mcp, Streamable HTTP) and is returned only once. Only sessions whose policy declares an mcp section accept this call. See docs/mcp-proxy.md.
+ * @summary Spawn an agent for MCP proxy mode and issue its credential
+ */
+export const mintSwarmMcpAgent = async (sessionId: string,
+    mcpAgentInput: McpAgentInput, options?: Parameters<typeof customFetch>[1]): Promise<McpAgentCredential> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<McpAgentCredential>(getMintSwarmMcpAgentUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(mcpAgentInput)
+  }
+);}
+
+
+
+
+
+export const getMintSwarmMcpAgentMutationKey = () => ['mintSwarmMcpAgent'] as const;
+
+export const getMintSwarmMcpAgentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mintSwarmMcpAgent>>, TError,MintSwarmMcpAgentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof mintSwarmMcpAgent>>, TError,MintSwarmMcpAgentMutationVariables, TContext> => {
+
+const mutationKey = getMintSwarmMcpAgentMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof mintSwarmMcpAgent>>, MintSwarmMcpAgentMutationVariables> = (props) => {
+          const {sessionId,data} = props ?? {};
+
+          return  mintSwarmMcpAgent(sessionId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MintSwarmMcpAgentMutationResult = NonNullable<Awaited<ReturnType<typeof mintSwarmMcpAgent>>>
+    export type MintSwarmMcpAgentMutationBody = BodyType<McpAgentInput>
+    export type MintSwarmMcpAgentMutationError = ErrorType<void>
+    export type MintSwarmMcpAgentMutationVariables = {sessionId: string;data: BodyType<McpAgentInput>}
+
+    /**
+ * @summary Spawn an agent for MCP proxy mode and issue its credential
+ */
+export const useMintSwarmMcpAgent = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mintSwarmMcpAgent>>, TError,MintSwarmMcpAgentMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof mintSwarmMcpAgent>>,
+        TError,
+        MintSwarmMcpAgentMutationVariables,
+        TContext
+      > => {
+      return useMutation(getMintSwarmMcpAgentMutationOptions(options));
     }
 
 export const getCompleteSwarmToolUrl = (sessionId: string,) => {

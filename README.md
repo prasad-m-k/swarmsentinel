@@ -152,7 +152,7 @@ See [the real-agent showcase guide](docs/real-agent-showcase.md) for roles, poli
 - **pnpm 10**: this workspace requires pnpm, not npm or Yarn.
 - **Python 3.13 or newer**
 - **uv** for installing the locked Python dependencies
-- A Linux x86_64 environment, matching the current workspace's platform-specific package overrides
+- Platforms: the Python engine and its tests run on Linux x86_64 and macOS on Apple silicon (arm64). The dashboard's committed lockfile targets Linux x86_64; on macOS use the workaround in [the judges' guide](docs/JUDGES.md). Windows is untested apart from the SDK journal's Windows-specific tests.
 
 The SwarmSentinel engine does not require an LLM API key or database. The repository also contains starter API/database packages; those are not required to run the SwarmSentinel simulation engine.
 

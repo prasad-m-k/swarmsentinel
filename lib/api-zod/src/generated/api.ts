@@ -77,7 +77,7 @@ export const SimulateSwarmResponse = zod.object({
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
   "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -184,6 +184,18 @@ export const GetSwarmSourcesResponse = zod.object({
 
 
 /**
+ * Derived from verified Clerk claims only. Users without an organization are their own tenant with the admin role. Organization roles map to viewer, operator or admin (SWARM_ORG_ROLES).
+ * @summary The caller's tenant, role and permissions
+ */
+export const GetSwarmPrincipalResponse = zod.object({
+  "subject": zod.string(),
+  "tenant": zod.string().describe('org:<id> or user:<subject>'),
+  "role": zod.enum(['viewer', 'operator', 'admin']),
+  "permissions": zod.array(zod.string())
+})
+
+
+/**
  * @summary Live sessions, newest first
  */
 export const ListSwarmSessionsResponseItem = zod.object({
@@ -213,7 +225,7 @@ export const createSwarmSessionBodyCompletionGraceSecondsMax = 86400;
 
 
 export const CreateSwarmSessionBody = zod.object({
-  "policy": zod.enum(['mock', 'ai-village', 'agents']).default(createSwarmSessionBodyPolicyDefault),
+  "policy": zod.enum(['mock', 'ai-village', 'agents', 'mcp-demo']).default(createSwarmSessionBodyPolicyDefault),
   "feedbackEnabled": zod.boolean().default(createSwarmSessionBodyFeedbackEnabledDefault),
   "root": zod.string().default(createSwarmSessionBodyRootDefault),
   "label": zod.string().max(createSwarmSessionBodyLabelMax).default(createSwarmSessionBodyLabelDefault),
@@ -398,6 +410,62 @@ export const ExecuteSwarmToolResponse = zod.object({
 
 
 /**
+ * Evaluated as a spawn from parentId (the session root when empty), so delegation scope, depth cap and revocation apply. The credential authenticates that one agent at the engine's MCP endpoint (/api/swarm/mcp, Streamable HTTP) and is returned only once. Only sessions whose policy declares an mcp section accept this call. See docs/mcp-proxy.md.
+ * @summary Spawn an agent for MCP proxy mode and issue its credential
+ */
+export const MintSwarmMcpAgentParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const mintSwarmMcpAgentBodyAgentIdMax = 80;
+
+
+export const mintSwarmMcpAgentBodyAgentIdRegExp = new RegExp('^[A-Za-z0-9._-]+$');
+export const mintSwarmMcpAgentBodyParentIdDefault = ``;
+export const mintSwarmMcpAgentBodyParentIdMax = 120;
+
+export const mintSwarmMcpAgentBodyScopeDefault = [];
+
+export const MintSwarmMcpAgentBody = zod.object({
+  "agentId": zod.string().min(1).max(mintSwarmMcpAgentBodyAgentIdMax).regex(mintSwarmMcpAgentBodyAgentIdRegExp),
+  "parentId": zod.string().max(mintSwarmMcpAgentBodyParentIdMax).default(mintSwarmMcpAgentBodyParentIdDefault).describe('Session root when empty'),
+  "scope": zod.array(zod.string()).default(mintSwarmMcpAgentBodyScopeDefault).describe('Tool patterns delegated to the agent; empty inherits the parent\'s')
+})
+
+export const MintSwarmMcpAgentResponse = zod.object({
+  "agentId": zod.string(),
+  "parentId": zod.string(),
+  "credential": zod.string().describe('Bearer credential for the MCP endpoint. Shown once; store it like a secret'),
+  "endpoint": zod.string(),
+  "decision": zod.object({
+  "eventId": zod.string(),
+  "completionToken": zod.string().optional().describe('Opaque session/event capability for allowed owner-private permission-only tools. Never put in recorder exports or logs.'),
+  "allowed": zod.boolean(),
+  "decision": zod.enum(['allow', 'throttle', 'drop', 'observed']),
+  "rule": zod.string(),
+  "reason": zod.string(),
+  "policyVersion": zod.number().int(),
+  "taintOrigin": zod.string(),
+  "violations": zod.array(zod.object({
+  "directive": zod.string(),
+  "attempted_action": zod.string(),
+  "detail": zod.string().optional(),
+  "enforced": zod.boolean()
+})),
+  "alerts": zod.array(zod.object({
+  "id": zod.string(),
+  "timestamp": zod.string(),
+  "kind": zod.string(),
+  "reason": zod.string(),
+  "agents": zod.array(zod.string()),
+  "eventId": zod.string()
+})),
+  "evaluationMs": zod.number()
+})
+})
+
+
+/**
  * The owner must supply the session-bound completionToken returned by evaluate and the exact event, actor and span. Only one terminal receipt is accepted. Refused calls, non-tools, sandbox executions, and duplicate or contradictory receipts cannot be updated. No results or error text are accepted. This is caller-reported evidence, not engine observation or proof of side effects.
  * @summary Record caller-reported completion of an allowed permission-only tool
  */
@@ -444,7 +512,7 @@ export const CompleteSwarmToolResponse = zod.object({
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
   "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -564,7 +632,7 @@ export const GetSwarmSessionResponse = zod.object({
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
   "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -710,7 +778,7 @@ export const GetSwarmDemoSessionResponse = zod.object({
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
   "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),

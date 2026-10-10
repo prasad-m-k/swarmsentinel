@@ -13,4 +13,5 @@ export const SessionInputPolicy = {
   mock: 'mock',
   'ai-village': 'ai-village',
   agents: 'agents',
+  'mcp-demo': 'mcp-demo',
 } as const;

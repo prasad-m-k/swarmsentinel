@@ -117,6 +117,7 @@ export const TraceSource = {
   synthetic: 'synthetic',
   'ai-village': 'ai-village',
   live: 'live',
+  mcp: 'mcp',
 } as const;
 
 export type TraceReads = typeof TraceReads[keyof typeof TraceReads];
@@ -495,6 +496,31 @@ export interface ToolOutcome {
   error?: string;
 }
 
+export interface McpAgentInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     * @pattern ^[A-Za-z0-9._-]+$
+     */
+  agentId: string;
+  /**
+     * Session root when empty
+     * @maxLength 120
+     */
+  parentId?: string;
+  /** Tool patterns delegated to the agent; empty inherits the parent's */
+  scope?: string[];
+}
+
+export interface McpAgentCredential {
+  agentId: string;
+  parentId: string;
+  /** Bearer credential for the MCP endpoint. Shown once; store it like a secret */
+  credential: string;
+  endpoint: string;
+  decision: CallDecision;
+}
+
 export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];
 
 
@@ -502,6 +528,7 @@ export const SessionInputPolicy = {
   mock: 'mock',
   'ai-village': 'ai-village',
   agents: 'agents',
+  'mcp-demo': 'mcp-demo',
 } as const;
 
 export interface SessionInput {
@@ -516,6 +543,23 @@ export interface SessionInput {
      * @maximum 86400
      */
   completionGraceSeconds?: number;
+}
+
+export type PrincipalRole = typeof PrincipalRole[keyof typeof PrincipalRole];
+
+
+export const PrincipalRole = {
+  viewer: 'viewer',
+  operator: 'operator',
+  admin: 'admin',
+} as const;
+
+export interface Principal {
+  subject: string;
+  /** org:<id> or user:<subject> */
+  tenant: string;
+  role: PrincipalRole;
+  permissions: string[];
 }
 
 export interface SessionSummary {

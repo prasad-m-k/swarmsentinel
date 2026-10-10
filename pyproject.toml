@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
+    "mcp>=2.3.0",
     "networkx>=3.7",
     "numpy>=2.5.3",
     "openai>=3.24.0",
