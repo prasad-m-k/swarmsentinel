@@ -40,10 +40,12 @@ export interface Trace {
   toolBodyExecuted?: boolean;
   /** Fixed safe error code only; no exception details or tool results. */
   executionError?: TraceExecutionError;
-  /** Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows. */
+  /** Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor's decision, not a gateway decision. Absent for unobserved, synthetic and historical rows. */
   executionProvenance?: TraceExecutionProvenance;
   policyVersion: number;
   source?: TraceSource;
+  /** Confidentiality labels (asp:<class>) the acting context held after this action */
+  labels?: string[];
   /** table:row-id in the source dataset */
   sourceRef?: string;
   detail?: string;
@@ -58,6 +60,8 @@ export interface Trace {
   contaminated?: boolean;
   /** Event id of the untrusted read this context descends from; empty if clean */
   taintOrigin?: string;
+  /** Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task */
+  taskId?: string;
   /** Spawn only: tool patterns delegated to the child */
   scope?: string[];
 }

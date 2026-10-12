@@ -1,0 +1,7 @@
+# Agent image: an MCP client and nothing else from the engine. No engine code, policies or secrets.
+FROM python:3.13-slim
+RUN pip install --no-cache-dir "mcp==2.3.0" "httpx2==2.13.1" && useradd --create-home agent
+COPY deploy/confinement/bypass_probe.py /home/agent/bypass_probe.py
+USER agent
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "/home/agent/bypass_probe.py"]

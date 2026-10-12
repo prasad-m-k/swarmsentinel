@@ -1,9 +1,12 @@
 import asyncio
+import os
+import hmac
 import json
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Literal, Optional
 from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -20,6 +23,7 @@ from village.normalize import PERMA_COMPUTER_USE, pacific_day
 from auth import Principal, require_principal, still_valid, village_access
 from sandbox import ExecutionInput, SandboxInput
 from mcp_proxy import front as mcp_front
+from mcp_proxy import broker as mcp_broker
 import persistence
 from starlette.routing import Route
 from pydantic import ValidationError
@@ -278,6 +282,83 @@ def mint_mcp_agent(session_id: str, spec: McpAgentInput, principal: Principal = 
         raise HTTPException(403, f"Spawn refused by the ASP gateway ({decision['rule']}): {decision['reason']}")
     return {"agentId": spec.agentId, "parentId": spec.parentId or session.spec.root,
             "credential": credential, "endpoint": "/api/swarm/mcp", "decision": decision}
+
+
+@app.post("/api/swarm/sessions/{session_id}/mcp/agents/{agent_id}/task", status_code=201)
+def rotate_mcp_task(session_id: str, agent_id: str, principal: Principal = Depends(require_principal)):
+    """Start a new task for an MCP agent: a new credential, the old one retired. Under taint-scope "task"
+    the new task starts clean; this is the controller's declassification step, never the agent's."""
+    session = _session(session_id, principal, "session.act")
+    if session.mcp is None:
+        raise HTTPException(409, "This session's policy declares no MCP servers")
+    if not still_valid(principal):
+        raise HTTPException(401, "Authentication expired")
+    try:
+        task, credential = session.mcp.rotate_task(agent_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"agentId": agent_id, "taskId": task, "credential": credential, "endpoint": "/api/swarm/mcp"}
+
+
+# Egress monitor link (docs/egress-monitor.md). A monitor on the model-API path resolves an agent's
+# engine-issued MCP credential to its identity, task and confidentiality labels, and reports its decisions
+# back to the recorder. Disabled unless SWARM_EGRESS_SECRET is set; loopback callers only unless
+# SWARM_EGRESS_REMOTE=true (for a monitor in another container on a private network).
+class EgressResolveInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    credential: str = Field(min_length=1, max_length=200)
+
+
+class EgressDecisionInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    sessionId: str = Field(min_length=1, max_length=120)
+    agentId: str = Field(min_length=1, max_length=120)
+    taskId: str = Field(default="", max_length=200)
+    verdict: Literal["allow", "translate", "hold", "block"]
+    applied: Literal["allow", "translate", "hold", "block"]
+    mode: Literal["report", "enforce"]
+    destination: str = Field(min_length=1, max_length=255)
+    category: str = Field(default="", max_length=80)
+    classes: list[str] = Field(default=[], max_length=40)
+    rules: list[str] = Field(default=[], max_length=80)
+    model: str = Field(default="", max_length=120)
+    timestamp: Optional[str] = None
+
+
+def _egress_auth(request: Request):
+    secret = os.environ.get("SWARM_EGRESS_SECRET", "")
+    if not secret:
+        raise HTTPException(404, "Not found")
+    host = request.client.host if request.client else ""
+    if os.environ.get("SWARM_EGRESS_REMOTE") != "true" and host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(403, "Egress monitor endpoints accept loopback callers only")
+    if not hmac.compare_digest(request.headers.get("x-egress-secret", "").encode(), secret.encode()):
+        raise HTTPException(401, "Egress monitor authentication failed")
+
+
+@app.post("/api/swarm/egress/resolve")
+def egress_resolve(body: EgressResolveInput, request: Request):
+    """Identity, task, confidentiality labels, taint and revocation for an engine-issued MCP credential."""
+    _egress_auth(request)
+    bound = mcp_broker.lookup(body.credential)
+    session = SESSIONS.get(bound[0]) if bound else None
+    if session is None or session.mcp is None or session.closed or bound[1] not in session.mcp.agents:
+        raise HTTPException(404, "Unknown or expired agent credential")
+    return session.egress_identity(bound[1])
+
+
+@app.post("/api/swarm/egress/events", status_code=201)
+def egress_event(body: EgressDecisionInput, request: Request):
+    """Record an egress monitor's content-free decision in the agent's session recorder."""
+    _egress_auth(request)
+    session = SESSIONS.get(body.sessionId)
+    if session is None or session.mcp is None or session.closed or body.agentId not in session.mcp.agents:
+        raise HTTPException(404, "Unknown session or agent")
+    return {"eventId": session.record_egress(**body.model_dump(exclude={"sessionId"}))}
 
 
 @app.post("/api/swarm/sessions/{session_id}/completion")

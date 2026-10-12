@@ -704,6 +704,7 @@ export default function Dashboard() {
               <div className="text-muted-foreground mt-1">
                 Engine-observed: {toolEvidenceCounts.provenance['engine-observed']}
                 {' · '}Caller-reported: {toolEvidenceCounts.provenance['caller-reported']}
+                {' · '}Egress monitor: {toolEvidenceCounts.provenance['egress-monitor-reported']}
                 {' · '}Unobserved provenance: {toolEvidenceCounts.provenance.unobserved}
                 {' · '}Caller reports are not engine verification
               </div>
@@ -736,6 +737,7 @@ export default function Dashboard() {
                     <option value="all">any provenance</option>
                     <option value="engine-observed">engine-observed</option>
                     <option value="caller-reported">caller-reported</option>
+                    <option value="egress-monitor-reported">egress monitor</option>
                     <option value="unobserved">unobserved provenance</option>
                   </select>
                   <select className={sel} value={fOutcome} onChange={(e) => setFOutcome(e.target.value as OutcomeFilter)}

@@ -243,6 +243,83 @@ paths:
         "409": { description: "Session has no MCP policy, is closed, or the agent ID is invalid" }
         "422": { description: Invalid request }
         "503": { description: Authentication unavailable or not configured }
+  /swarm/sessions/{sessionId}/mcp/agents/{agentId}/task:
+    post:
+      security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
+      operationId: rotateSwarmMcpTask
+      tags: [swarm]
+      summary: Start a new task for an MCP agent and issue a new credential
+      description: >-
+        Retires the agent's current credential and binds a new one to a new task. Under the policy's
+        content-trust taint-scope "task", taint is kept per (agent, task), so the new task starts clean
+        while descendants spawned in the old task keep its taint. Only the session owner (operator role)
+        can do this; agents cannot open tasks. See docs/mcp-proxy.md.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { name: agentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "201":
+          description: New task opened; credential issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/McpTaskCredential" }
+        "401": { description: Authentication required or expired }
+        "403": { description: "Agent or an ancestor is revoked, or untrusted cookie mutation origin" }
+        "404": { description: Unknown session or agent }
+        "409": { description: Session has no MCP policy or is closed }
+        "503": { description: Authentication unavailable or not configured }
+  /swarm/egress/resolve:
+    post:
+      operationId: resolveSwarmEgressIdentity
+      tags: [swarm]
+      summary: Resolve an agent's MCP credential for an egress monitor
+      description: >-
+        For a monitor on the model-API path. Returns the engine-issued identity, current task, confidentiality
+        labels, taint and revocation of the agent holding the credential. Requires the X-Egress-Secret header
+        (SWARM_EGRESS_SECRET); disabled when that variable is unset; loopback callers only unless
+        SWARM_EGRESS_REMOTE=true. See docs/egress-monitor.md.
+      parameters:
+        - { name: X-Egress-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EgressResolveInput" }
+      responses:
+        "200":
+          description: Credential resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EgressIdentity" }
+        "401": { description: Wrong or missing egress secret }
+        "403": { description: Non-loopback caller while remote callers are disabled }
+        "404": { description: "Unknown or expired credential, or the endpoint is disabled" }
+        "422": { description: Invalid request }
+  /swarm/egress/events:
+    post:
+      operationId: recordSwarmEgressEvent
+      tags: [swarm]
+      summary: Record an egress monitor's decision in the session recorder
+      description: >-
+        Content-free: classes, rules, verdict, destination and model name only. Recorded as an observed,
+        out-of-band row with executionProvenance egress-monitor-reported. Same authentication as resolve.
+      parameters:
+        - { name: X-Egress-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EgressDecisionInput" }
+      responses:
+        "201":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EgressEventAck" }
+        "401": { description: Wrong or missing egress secret }
+        "403": { description: Non-loopback caller while remote callers are disabled }
+        "404": { description: "Unknown session or agent, or the endpoint is disabled" }
+        "422": { description: Invalid request }
   /swarm/sessions/{sessionId}/completion:
     post:
       security: [{ ClerkCookie: [] }, { ClerkBearer: [] }]
@@ -431,9 +508,10 @@ components:
         executionStatus: { type: string, enum: [not-started, succeeded, failed], description: "Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization." }
         toolBodyExecuted: { type: boolean, description: "Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects." }
         executionError: { type: string, enum: [tool_execution_failed], description: "Fixed safe error code only; no exception details or tool results." }
-        executionProvenance: { type: string, enum: [engine-observed, caller-reported], description: "Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows." }
+        executionProvenance: { type: string, enum: [engine-observed, caller-reported, egress-monitor-reported], description: "Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor's decision, not a gateway decision. Absent for unobserved, synthetic and historical rows." }
         policyVersion: { type: integer }
-        source: { type: string, enum: [synthetic, ai-village, live, mcp] }
+        source: { type: string, enum: [synthetic, ai-village, live, mcp, egress] }
+        labels: { type: array, items: { type: string }, default: [], description: "Confidentiality labels (asp:<class>) the acting context held after this action" }
         sourceRef: { type: string, description: "table:row-id in the source dataset" }
         detail: { type: string }
         network: { type: string }
@@ -445,6 +523,7 @@ components:
         violations: { type: array, items: { $ref: "#/components/schemas/Violation" } }
         contaminated: { type: boolean }
         taintOrigin: { type: string, description: Event id of the untrusted read this context descends from; empty if clean }
+        taskId: { type: string, default: "", description: "Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task" }
         scope: { type: array, items: { type: string }, description: "Spawn only: tool patterns delegated to the child" }
     Violation:
       type: object
@@ -651,6 +730,52 @@ components:
         credential: { type: string, description: Bearer credential for the MCP endpoint. Shown once; store it like a secret }
         endpoint: { type: string }
         decision: { $ref: "#/components/schemas/CallDecision" }
+    EgressResolveInput:
+      type: object
+      additionalProperties: false
+      required: [credential]
+      properties:
+        credential: { type: string, minLength: 1, maxLength: 200 }
+    EgressIdentity:
+      type: object
+      required: [sessionId, agentId, taskId, labels, tainted, revoked]
+      properties:
+        sessionId: { type: string }
+        agentId: { type: string }
+        taskId: { type: string }
+        labels: { type: array, items: { type: string } }
+        tainted: { type: boolean }
+        revoked: { type: boolean }
+    EgressDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [sessionId, agentId, verdict, applied, mode, destination]
+      properties:
+        sessionId: { type: string, minLength: 1, maxLength: 120 }
+        agentId: { type: string, minLength: 1, maxLength: 120 }
+        taskId: { type: string, maxLength: 200, default: "" }
+        verdict: { type: string, enum: [allow, translate, hold, block] }
+        applied: { type: string, enum: [allow, translate, hold, block] }
+        mode: { type: string, enum: [report, enforce] }
+        destination: { type: string, minLength: 1, maxLength: 255 }
+        category: { type: string, maxLength: 80, default: "" }
+        classes: { type: array, items: { type: string }, maxItems: 40, default: [] }
+        rules: { type: array, items: { type: string }, maxItems: 80, default: [] }
+        model: { type: string, maxLength: 120, default: "" }
+        timestamp: { type: [string, "null"] }
+    EgressEventAck:
+      type: object
+      required: [eventId]
+      properties:
+        eventId: { type: string }
+    McpTaskCredential:
+      type: object
+      required: [agentId, taskId, credential, endpoint]
+      properties:
+        agentId: { type: string }
+        taskId: { type: string }
+        credential: { type: string, description: Bearer credential for the MCP endpoint. Shown once; store it like a secret }
+        endpoint: { type: string }
     SessionInput:
       type: object
       properties:

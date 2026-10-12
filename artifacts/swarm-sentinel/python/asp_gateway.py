@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict, deque
 from datetime import datetime
 from asp_policy import argument_violation, host_allowed, tool_matches
@@ -11,7 +12,7 @@ DIRECTIVES = {
     "delegation.out_of_scope": "delegation.sub-agents", "delegation.scope_expansion": "delegation.sub-agents",
     "tools.write_cap": "swarm.write-cap", "semantic.identical_intent": "swarm.repeated-intent",
     "lineage.unknown": "delegation", "lineage.invalid": "delegation", "lineage.max_depth": "delegation.max-depth",
-    "lineage.duplicate": "delegation", "tripwire.revoked": "swarm.tripwires", "budget.steps": "swarm.step-budget",
+    "lineage.duplicate": "delegation", "lineage.task_unknown": "content-trust.taint-scope", "tripwire.revoked": "swarm.tripwires", "budget.steps": "swarm.step-budget",
     "inspection.secrets": "content-inspection.secrets", "inspection.pii": "content-inspection.pii",
     "inspection.injection": "content-inspection.injection",
 }
@@ -42,6 +43,17 @@ class ASPGateway:
         self.contaminated = {}
         self.tainted = {}
         self.taint_groups = defaultdict(set)
+        # Task-scoped taint: tasks a trusted controller opened per agent, each agent's current task,
+        # the task a child was spawned in, and (agent, task) -> origin event id.
+        self.tasks = defaultdict(set)
+        self.current_task = {}
+        self.spawn_task = {}
+        self.task_tainted = {}
+        # Confidentiality labels per taint unit (agent, or (agent, task) under task scope); high-water mark.
+        self.labels = defaultdict(set)
+        conf = policy.confidentiality
+        self._label_rules = [(name, cls.tools, [re.compile(p) for p in cls.arguments])
+                             for name, cls in conf.classes.items()] if conf else []
         # Inherit-and-restrict delegation: agent -> tool patterns granted at spawn.
         self.scopes = {}
         # Per-agent step budget: timestamps of in-band attempts inside the window.
@@ -63,14 +75,57 @@ class ASPGateway:
             agent = self.agents.get(agent, ("", 0, ""))[0]
         return False
 
+    @property
+    def task_scoped(self):
+        return self.policy.content_trust.taint_scope == "task"
+
+    def open_task(self, agent, task):
+        """Called by a trusted controller only (scaffold, engine, credential issuer). Agents cannot open tasks."""
+        self.tasks[agent].add(task)
+        self.current_task[agent] = task
+
+    def task_of(self, event):
+        return event.taskId or self.current_task.get(event.agentId, "")
+
     def taint_origin(self, event):
         """Event id of the untrusted read this context descends from, or "" if clean."""
         origin = self.contaminated.get(event.spanId)
-        actor = event.agentId
+        actor, task = event.agentId, self.task_of(event)
         while not origin and actor:
-            origin = self.tainted.get(actor, "")
+            if self.task_scoped:
+                origin = self.task_tainted.get((actor, task), "")
+                task = self.spawn_task.get(actor, "")
+            else:
+                origin = self.tainted.get(actor, "")
             actor = self.agents.get(actor, ("", 0, ""))[0]
         return origin or ""
+
+    def _unit(self, agent, task):
+        return (agent, task) if self.task_scoped else agent
+
+    def labels_for(self, agent, task=None):
+        """Classes the context holds: its own unit plus every ancestor's unit at spawn time."""
+        task = self.current_task.get(agent, "") if task is None else task
+        held, actor = set(), agent
+        while actor:
+            held |= self.labels.get(self._unit(actor, task), set())
+            task = self.spawn_task.get(actor, "")
+            actor = self.agents.get(actor, ("", 0, ""))[0]
+        return held
+
+    def _label(self, event):
+        """Executed tool calls that touch a confidentiality class add it to the acting unit."""
+        unit = self._unit(event.agentId, self.task_of(event))
+        for name, tools, patterns in self._label_rules:
+            if (tools and tool_matches(event.target, tools)) or any(p.search(event.detail) for p in patterns):
+                self.labels[unit].add(name)
+
+    def taint(self, agent, origin, task=None):
+        """Mark a context contaminated at the policy's unit: the agent, or its (agent, task) pair."""
+        if self.task_scoped:
+            self.task_tainted.setdefault((agent, self.current_task.get(agent, "") if task is None else task), origin)
+        else:
+            self.tainted.setdefault(agent, origin)
 
     def _scope_chain(self, agent):
         while agent:
@@ -163,6 +218,8 @@ class ASPGateway:
             decision, rule, reason = "drop", "lineage.unknown", "Actor was not admitted by an allowed spawn or registry entry"
         elif event.parentId != parent or event.parentSpanId != parent_span:
             decision, rule, reason = "drop", "lineage.invalid", "Declared lineage does not match gateway registry"
+        elif self.task_scoped and event.taskId and event.taskId not in self.tasks[event.agentId]:
+            decision, rule, reason = "drop", "lineage.task_unknown", "Task was not opened for this agent by a trusted controller"
         elif proposed_depth > self.policy.delegation.max_depth:
             decision, rule, reason = "drop", "lineage.max_depth", f"Hop depth {proposed_depth} exceeds cap {self.policy.delegation.max_depth}"
         elif self.is_revoked(event.agentId):
@@ -180,18 +237,33 @@ class ASPGateway:
             decision, rule, reason = self._rate_checks(event, now, key, False, "") or (decision, rule, reason)
         if event.action == "spawn" and decision == "allow":
             self.agents[event.target] = (event.agentId, proposed_depth, event.spanId)
+            self.spawn_task[event.target] = self.task_of(event)
             if event.scope:
                 self.scopes[event.target] = list(event.scope)
         executed = self.mode == "report-only" or decision in {"allow", "observed"}
         if executed and event.reads == "untrusted" and not self.taint_origin(event):
             self.contaminated[event.spanId] = event.id
+            if self.task_scoped:
+                self.taint(event.agentId, event.id, self.task_of(event))
             self.taint_groups[event.id].add(event.agentId)
         origin = self.taint_origin(event)
         if executed and origin and event.action == "message" and event.channel == "in_band" and self.policy.content_trust.propagate:
             for recipient in event.mentions or [event.target]:
-                if recipient in self.agents and recipient not in self.protected and recipient not in self.tainted:
-                    self.tainted[recipient] = origin
-                    self.taint_groups[origin].add(recipient)
+                if recipient not in self.agents or recipient in self.protected:
+                    continue
+                key = (recipient, self.current_task.get(recipient, ""))
+                if (self.task_tainted if self.task_scoped else self.tainted).get(key if self.task_scoped else recipient):
+                    continue
+                self.taint(recipient, origin)
+                self.taint_groups[origin].add(recipient)
+        if executed and self._label_rules and event.channel == "in_band":
+            if event.action == "tool":
+                self._label(event)
+            elif event.action == "message" and self.policy.confidentiality.propagate:
+                held = self.labels_for(event.agentId, self.task_of(event))
+                for recipient in (event.mentions or [event.target]) if held else []:
+                    if recipient in self.agents and recipient not in self.protected:
+                        self.labels[self._unit(recipient, self.current_task.get(recipient, ""))] |= held
         violations = advisories
         if decision in {"drop", "throttle"}:
             violations = [Violation(directive=DIRECTIVES.get(rule, rule), attempted_action=event.target,
@@ -199,12 +271,13 @@ class ASPGateway:
         if self.mode == "report-only" and decision in {"drop", "throttle"}:
             reason = f"Would {decision}: {reason}"
         trace = Trace(**{
-            **event.model_dump(), "depth": proposed_depth,
+            **event.model_dump(), "depth": proposed_depth, "taskId": self.task_of(event),
             "parentId": parent if known else event.parentId,
             "parentSpanId": parent_span if known else event.parentSpanId,
             "decision": decision, "rule": rule, "reason": reason,
             "executed": executed, "policyVersion": self.version, "mode": self.mode,
             "violations": violations, "contaminated": bool(origin), "taintOrigin": origin,
+            "labels": sorted(f"asp:{c}" for c in self.labels_for(event.agentId, self.task_of(event))) if self._label_rules else [],
         })
         self.telemetry.append(trace)
         return trace

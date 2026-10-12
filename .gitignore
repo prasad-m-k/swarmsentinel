@@ -75,3 +75,6 @@ village-transcript.json
 
 # Office lock files
 ~$*
+
+# Anonymized review artifact (rebuildable; uploaded to the journal, not versioned)
+docs/source-materials/taisap-2026/asp-artifact.zip

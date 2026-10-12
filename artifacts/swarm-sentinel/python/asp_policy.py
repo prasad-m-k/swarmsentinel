@@ -41,6 +41,10 @@ class ContentTrust(_Strict):
     contaminated_deny: list[str] = Field(default=[], alias="contaminated-deny")
     # Biba no-read-down across agents: receiving a message from a tainted context taints the recipient.
     propagate: bool = Field(default=False, alias="propagate-via-messages")
+    # Unit of contamination. "actor": the reading span, plus the agent on mediated paths and via messages.
+    # "task": an (agent, task) pair, where only a trusted controller opens tasks (open_task). A fresh span
+    # cannot launder taint, and a task the controller opens later starts clean (explicit declassification).
+    taint_scope: Literal["actor", "task"] = Field(default="actor", alias="taint-scope")
 
 
 class Delegation(_Strict):
@@ -130,6 +134,37 @@ class Inspection(_Strict):
     results: ResultInspection = Field(default_factory=ResultInspection)
 
 
+class ConfidentialityClass(_Strict):
+    """A data class an agent can come to hold. Tool globs and regular expressions over canonical arguments."""
+    tools: list[str] = []
+    arguments: list[str] = []
+
+    @field_validator("arguments")
+    @classmethod
+    def _compile(cls, patterns):
+        for pattern in patterns:
+            re.compile(pattern)
+        return patterns
+
+
+class Confidentiality(_Strict):
+    """Bell-LaPadula high-water mark: executed tool calls that touch a class label the context with it.
+
+    Labels attach to the same unit as taint (content-trust taint-scope), only accumulate, are inherited by
+    children and, when enabled, follow messages. An egress monitor on the model-API path reads them
+    (POST /api/swarm/egress/resolve) and decides what may leave."""
+    classes: dict[str, ConfidentialityClass]
+    propagate: bool = Field(default=True, alias="propagate-via-messages")
+
+    @field_validator("classes")
+    @classmethod
+    def _names(cls, classes):
+        for name in classes:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", name):
+                raise ValueError(f"Confidentiality class {name!r} must use lowercase letters, digits and '-'")
+        return classes
+
+
 class ASPPolicy(_Strict):
     asp_version: Literal["1.0"] = Field(alias="asp-version")
     description: str = ""
@@ -142,6 +177,7 @@ class ASPPolicy(_Strict):
     # MCP proxy mode (docs/mcp-proxy.md): downstream servers and the tools they may expose.
     mcp: Mcp | None = None
     inspection: Inspection | None = None
+    confidentiality: Confidentiality | None = None
 
     @classmethod
     def load(cls, name):
@@ -159,7 +195,7 @@ class ASPPolicy(_Strict):
 
     def declaration(self):
         # Policies without the newer optional sections keep their earlier declaration unchanged.
-        return self.model_dump(by_alias=True, exclude={name for name in ("mcp", "inspection") if getattr(self, name) is None})
+        return self.model_dump(by_alias=True, exclude={name for name in ("mcp", "inspection", "confidentiality") if getattr(self, name) is None})
 
 
 def tool_matches(tool, patterns):
