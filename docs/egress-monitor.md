@@ -33,7 +33,7 @@ Opening a new task (`POST /api/swarm/sessions/{id}/mcp/agents/{agentId}/task`) s
 
 - `tests/test_egress.py`: labels from arguments and tools, refused calls do not label, inheritance and message propagation, task scope, endpoint authentication, recorder rows, durability.
 - SwarmSheriff `sentinel_test.go`: engine labels block a request, clean agents are forwarded without the credential header, unknown, unreachable and revoked fail closed, required credentials, content-free events.
-- End-to-end with both processes (ten steps, all as designed) and the AI Village counterfactual are reported in the TAISAP manuscript (`docs/source-materials/taisap-2026/`).
+- End-to-end with both processes: ten steps, all as designed. An AI Village counterfactual replay measured how often task-scoped labels would hold model requests.
 
 ## Limits
 
