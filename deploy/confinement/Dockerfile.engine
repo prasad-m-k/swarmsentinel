@@ -1,0 +1,12 @@
+# Engine image for the confinement lab. Built from the repository root (see docker-compose.yml).
+FROM python:3.13-slim
+WORKDIR /app
+COPY deploy/confinement/requirements-engine.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY artifacts/swarm-sentinel/python /app/repo/artifacts/swarm-sentinel/python
+COPY deploy/confinement/engine_lab.py /app/engine_lab.py
+# The engine and its downstream servers run as an unprivileged user.
+RUN useradd --create-home engine && mkdir -p /run/agent-secrets /run/operator && chown engine /run/agent-secrets /run/operator
+USER engine
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "/app/engine_lab.py"]

@@ -24,11 +24,16 @@ import type {
   CallInput,
   CompletionReceipt,
   DemoInput,
+  EgressDecisionInput,
+  EgressEventAck,
+  EgressIdentity,
+  EgressResolveInput,
   ExecutionInput,
   HealthStatus,
   LaunchInjectionDemo202,
   McpAgentCredential,
   McpAgentInput,
+  McpTaskCredential,
   Principal,
   RunInput,
   SandboxInput,
@@ -1002,6 +1007,261 @@ export const useMintSwarmMcpAgent = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getMintSwarmMcpAgentMutationOptions(options));
+    }
+
+export const getRotateSwarmMcpTaskUrl = (sessionId: string,
+    agentId: string,) => {
+
+
+
+
+  return `/api/swarm/sessions/${sessionId}/mcp/agents/${agentId}/task`
+}
+
+/**
+ * Retires the agent's current credential and binds a new one to a new task. Under the policy's content-trust taint-scope "task", taint is kept per (agent, task), so the new task starts clean while descendants spawned in the old task keep its taint. Only the session owner (operator role) can do this; agents cannot open tasks. See docs/mcp-proxy.md.
+ * @summary Start a new task for an MCP agent and issue a new credential
+ */
+export const rotateSwarmMcpTask = async (sessionId: string,
+    agentId: string, options?: Parameters<typeof customFetch>[1]): Promise<McpTaskCredential> => {
+
+  return customFetch<McpTaskCredential>(getRotateSwarmMcpTaskUrl(sessionId,agentId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRotateSwarmMcpTaskMutationKey = () => ['rotateSwarmMcpTask'] as const;
+
+export const getRotateSwarmMcpTaskMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateSwarmMcpTask>>, TError,RotateSwarmMcpTaskMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateSwarmMcpTask>>, TError,RotateSwarmMcpTaskMutationVariables, TContext> => {
+
+const mutationKey = getRotateSwarmMcpTaskMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateSwarmMcpTask>>, RotateSwarmMcpTaskMutationVariables> = (props) => {
+          const {sessionId,agentId} = props ?? {};
+
+          return  rotateSwarmMcpTask(sessionId,agentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateSwarmMcpTaskMutationResult = NonNullable<Awaited<ReturnType<typeof rotateSwarmMcpTask>>>
+
+    export type RotateSwarmMcpTaskMutationError = ErrorType<void>
+    export type RotateSwarmMcpTaskMutationVariables = {sessionId: string;agentId: string}
+
+    /**
+ * @summary Start a new task for an MCP agent and issue a new credential
+ */
+export const useRotateSwarmMcpTask = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateSwarmMcpTask>>, TError,RotateSwarmMcpTaskMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rotateSwarmMcpTask>>,
+        TError,
+        RotateSwarmMcpTaskMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRotateSwarmMcpTaskMutationOptions(options));
+    }
+
+export const getResolveSwarmEgressIdentityUrl = () => {
+
+
+
+
+  return `/api/swarm/egress/resolve`
+}
+
+/**
+ * For a monitor on the model-API path. Returns the engine-issued identity, current task, confidentiality labels, taint and revocation of the agent holding the credential. Requires the X-Egress-Secret header (SWARM_EGRESS_SECRET); disabled when that variable is unset; loopback callers only unless SWARM_EGRESS_REMOTE=true. See docs/egress-monitor.md.
+ * @summary Resolve an agent's MCP credential for an egress monitor
+ */
+export const resolveSwarmEgressIdentity = async (egressResolveInput: EgressResolveInput, options?: Parameters<typeof customFetch>[1]): Promise<EgressIdentity> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EgressIdentity>(getResolveSwarmEgressIdentityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(egressResolveInput)
+  }
+);}
+
+
+
+
+
+export const getResolveSwarmEgressIdentityMutationKey = () => ['resolveSwarmEgressIdentity'] as const;
+
+export const getResolveSwarmEgressIdentityMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>, TError,ResolveSwarmEgressIdentityMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>, TError,ResolveSwarmEgressIdentityMutationVariables, TContext> => {
+
+const mutationKey = getResolveSwarmEgressIdentityMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>, ResolveSwarmEgressIdentityMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  resolveSwarmEgressIdentity(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveSwarmEgressIdentityMutationResult = NonNullable<Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>>
+    export type ResolveSwarmEgressIdentityMutationBody = BodyType<EgressResolveInput>
+    export type ResolveSwarmEgressIdentityMutationError = ErrorType<void>
+    export type ResolveSwarmEgressIdentityMutationVariables = {data: BodyType<EgressResolveInput>}
+
+    /**
+ * @summary Resolve an agent's MCP credential for an egress monitor
+ */
+export const useResolveSwarmEgressIdentity = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>, TError,ResolveSwarmEgressIdentityMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveSwarmEgressIdentity>>,
+        TError,
+        ResolveSwarmEgressIdentityMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResolveSwarmEgressIdentityMutationOptions(options));
+    }
+
+export const getRecordSwarmEgressEventUrl = () => {
+
+
+
+
+  return `/api/swarm/egress/events`
+}
+
+/**
+ * Content-free: classes, rules, verdict, destination and model name only. Recorded as an observed, out-of-band row with executionProvenance egress-monitor-reported. Same authentication as resolve.
+ * @summary Record an egress monitor's decision in the session recorder
+ */
+export const recordSwarmEgressEvent = async (egressDecisionInput: EgressDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<EgressEventAck> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<EgressEventAck>(getRecordSwarmEgressEventUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(egressDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getRecordSwarmEgressEventMutationKey = () => ['recordSwarmEgressEvent'] as const;
+
+export const getRecordSwarmEgressEventMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordSwarmEgressEvent>>, TError,RecordSwarmEgressEventMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordSwarmEgressEvent>>, TError,RecordSwarmEgressEventMutationVariables, TContext> => {
+
+const mutationKey = getRecordSwarmEgressEventMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordSwarmEgressEvent>>, RecordSwarmEgressEventMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  recordSwarmEgressEvent(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordSwarmEgressEventMutationResult = NonNullable<Awaited<ReturnType<typeof recordSwarmEgressEvent>>>
+    export type RecordSwarmEgressEventMutationBody = BodyType<EgressDecisionInput>
+    export type RecordSwarmEgressEventMutationError = ErrorType<void>
+    export type RecordSwarmEgressEventMutationVariables = {data: BodyType<EgressDecisionInput>}
+
+    /**
+ * @summary Record an egress monitor's decision in the session recorder
+ */
+export const useRecordSwarmEgressEvent = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordSwarmEgressEvent>>, TError,RecordSwarmEgressEventMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordSwarmEgressEvent>>,
+        TError,
+        RecordSwarmEgressEventMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRecordSwarmEgressEventMutationOptions(options));
     }
 
 export const getCompleteSwarmToolUrl = (sessionId: string,) => {

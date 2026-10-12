@@ -16,7 +16,7 @@ export function matchesToolEvidence(event: EvidenceEvent, provenance: Provenance
 /** Count matching tools before the feed's display cap, not global admissions. */
 export function countToolEvidence(events: EvidenceEvent[]) {
   const outcomes = { 'not-started': 0, succeeded: 0, failed: 0, unobserved: 0 };
-  const provenance = { 'engine-observed': 0, 'caller-reported': 0, unobserved: 0 };
+  const provenance = { 'engine-observed': 0, 'caller-reported': 0, 'egress-monitor-reported': 0, unobserved: 0 };
   for (const event of events) {
     if (event.action !== 'tool') continue;
     outcomes[event.executionStatus ?? 'unobserved']++;

@@ -73,6 +73,7 @@ class ProxyBroker:
         self.root_span = f"mcp-root-{session.id[:8]}"
         self.agents = {}
         self.digests = set()
+        self.agent_digest = {}
         self.pool = DownstreamPool(self.mcp)
 
     def _identity(self, agent_id):
@@ -113,8 +114,46 @@ class ProxyBroker:
         digest = record.pop("digest")
         self.agents[record["agentId"]] = McpAgent(**record)
         self.digests.add(digest)
+        self.agent_digest[record["agentId"]] = digest
         with _credentials_lock:
             _credentials[digest] = (self.session.id, record["agentId"])
+        # Each credential is one task: only this issuer opens tasks, so an agent cannot start a clean one.
+        self.session.gateway.open_task(record["agentId"], record["spanId"])
+
+    def rotate_task(self, agent_id):
+        """Issue a new credential bound to a new task for an existing agent and retire the old one.
+
+        This is the controller's explicit declassification step under taint-scope "task": the new task
+        starts clean, while descendants spawned in the old task keep its taint. Returns (task, credential)."""
+        s = self.session
+        with s.lock:
+            if s.closed:
+                raise ValueError("Session is closed")
+            if agent_id not in self.agents:
+                raise LookupError("Agent was not minted for this proxy")
+            if s.gateway.is_revoked(agent_id):
+                raise PermissionError("Agent or an ancestor is revoked")
+            credential = f"ssa_{token_urlsafe(32)}"
+            record = dict(agentId=agent_id, spanId=f"mcp-{agent_id}-{token_hex(4)}", digest=_digest(credential),
+                          retired=self.agent_digest[agent_id])
+            self.rotate_record(record)
+            s._log("mcp_task", record)
+            if s.journal is not None:
+                import persistence
+                persistence.STORE.add_credential(record["digest"], s.id, agent_id)
+                persistence.STORE.remove_credential(record["retired"])
+            return record["spanId"], credential
+
+    def rotate_record(self, record):
+        agent = self.agents[record["agentId"]]
+        self.agents[agent.agentId] = McpAgent(agent.agentId, agent.parentId, agent.parentSpanId, record["spanId"])
+        self.digests.discard(record["retired"])
+        self.digests.add(record["digest"])
+        self.agent_digest[agent.agentId] = record["digest"]
+        with _credentials_lock:
+            _credentials.pop(record["retired"], None)
+            _credentials[record["digest"]] = (self.session.id, agent.agentId)
+        self.session.gateway.open_task(agent.agentId, record["spanId"])
 
     def resolve(self, exposed):
         server, _, tool = exposed.partition(SEPARATOR)
@@ -159,7 +198,7 @@ class ProxyBroker:
                 agentId=agent.agentId, action="tool", target=spec.target, intent=f"{exposed} {detail}",
                 spanId=agent.spanId, parentId=agent.parentId, parentSpanId=agent.parentSpanId,
                 detail=detail, network=network, reads=spec.reads, write=spec.write, resource=spec.resource,
-            ), completion_receipt=False, source="mcp")
+            ), completion_receipt=False, source="mcp", task_id=agent.spanId if agent_id in self.agents else "")
             trace = s.gateway.telemetry[-1]
             trace.executionProvenance = "engine-observed"
             if not decision["allowed"]:

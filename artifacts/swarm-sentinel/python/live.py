@@ -91,7 +91,7 @@ class LiveSession:
             from mcp_proxy.broker import ProxyBroker
             self.mcp = ProxyBroker(self)
 
-    def evaluate(self, call: CallInput, *, completion_receipt=True, source="live"):
+    def evaluate(self, call: CallInput, *, completion_receipt=True, source="live", task_id=""):
         with self.lock:
             if self.closed:
                 raise ValueError("Session is closed")
@@ -100,7 +100,7 @@ class LiveSession:
                 id=f"live-{len(self.gateway.telemetry) + 1:05d}",
                 timestamp=call.timestamp or datetime.now(timezone.utc).isoformat(),
                 channel="in_band", source=source, intentVector=intent_vector(call.intent or call.target), depth=0,
-                **call.model_dump(exclude={"timestamp"}),
+                taskId=task_id, **call.model_dump(exclude={"timestamp"}),
             )
             trace = self.gateway.evaluate_and_log(event)
             if self.owner is not None and trace.action == "tool" and not trace.executed:
@@ -110,7 +110,7 @@ class LiveSession:
             before = len(self.sentinel.alerts)
             self.sentinel.ingest(trace, self.gateway)
             self._log("evaluate", {"call": call.model_dump(exclude={"timestamp"}), "timestamp": event.timestamp,
-                                   "source": source})
+                                   "source": source, **({"taskId": task_id} if task_id else {})})
             elapsed = (time.perf_counter() - started) * 1000
             self.timings_ms.append(elapsed)
             response = dict(
@@ -142,12 +142,54 @@ class LiveSession:
                                "executionProvenance": trace.executionProvenance,
                                "violations": [v.model_dump() for v in trace.violations]})
 
+    def egress_identity(self, agent_id):
+        """What an egress monitor needs about an MCP agent: task, confidentiality labels, taint, revocation."""
+        with self.lock:
+            agent = self.mcp.agents[agent_id]
+            probe = SimpleNamespace(spanId=agent.spanId, agentId=agent_id, taskId=agent.spanId)
+            return dict(sessionId=self.id, agentId=agent_id, taskId=agent.spanId,
+                        labels=sorted(f"asp:{c}" for c in self.gateway.labels_for(agent_id, agent.spanId)),
+                        tainted=bool(self.gateway.taint_origin(probe)), revoked=self.gateway.is_revoked(agent_id))
+
+    def record_egress(self, agentId, taskId, verdict, applied, mode, destination, category, classes=(), rules=(),
+                      model="", timestamp=None):
+        """Record an egress monitor's decision on a model request as an observed, out-of-band row.
+
+        The model-API path is not mediated by this gateway, so the row is evidence, never a gateway decision.
+        It carries labels and counts only, like the monitor's own events."""
+        payload = dict(agentId=agentId, taskId=taskId, verdict=verdict, applied=applied, mode=mode,
+                       destination=destination, category=category, classes=list(classes), rules=list(rules),
+                       model=model, timestamp=timestamp or datetime.now(timezone.utc).isoformat())
+        with self.lock:
+            if self.closed:
+                raise ValueError("Session is closed")
+            agent = self.mcp.agents.get(agentId) if self.mcp else None
+            event = Event(
+                id=f"live-{len(self.gateway.telemetry) + 1:05d}", timestamp=payload["timestamp"], agentId=agentId,
+                parentId=agent.parentId if agent else "", spanId=agent.spanId if agent else f"egress-{agentId}",
+                parentSpanId=agent.parentSpanId if agent else "", action="tool", channel="out_of_band",
+                target=f"egress:{destination}", intent=f"model request to {destination}" + (f" ({model})" if model else ""),
+                intentVector=intent_vector(f"egress {destination}"), depth=0, source="egress", taskId=taskId,
+                network=destination)
+            trace = self.gateway.evaluate_and_log(event)
+            if verdict != "allow":
+                enforced = applied != "allow"
+                trace.violations.append(Violation(
+                    directive="egress." + (",".join(classes) or "unclassified"), attempted_action=f"egress:{destination}",
+                    detail=f"egress monitor {'applied' if enforced else 'would apply'} {verdict} "
+                           f"({', '.join(classes) or 'no class'}; {category}; rules {', '.join(rules) or 'none'})",
+                    enforced=enforced))
+            trace.executionProvenance = "egress-monitor-reported"
+            self.sentinel.ingest(trace, self.gateway)
+            self._log("egress", payload)
+            return trace.id
+
     def pin_taint(self, agent, origin, span="", group=False):
         """Taint set outside the gateway's own rules (engine-run untrusted reads, inspected results)."""
         gateway = self.gateway
         if span:
             gateway.contaminated.setdefault(span, origin)
-        gateway.tainted.setdefault(agent, origin)
+        gateway.taint(agent, origin)
         if group:
             gateway.taint_groups[origin].add(agent)
         self._log("taint", {"agent": agent, "origin": origin, "span": span, "group": group})
@@ -162,7 +204,7 @@ class LiveSession:
         for kind, payload in journal:
             if kind == "evaluate":
                 session.evaluate(CallInput(**payload["call"], timestamp=payload["timestamp"]),
-                                 completion_receipt=False, source=payload["source"])
+                                 completion_receipt=False, source=payload["source"], task_id=payload.get("taskId", ""))
                 rows[session.gateway.telemetry[-1].id] = session.gateway.telemetry[-1]
             elif kind == "evidence":
                 trace = rows[payload.pop("id")]
@@ -171,6 +213,10 @@ class LiveSession:
                     setattr(trace, name, value)
             elif kind == "taint":
                 session.pin_taint(**payload)
+            elif kind == "egress":
+                session.record_egress(**payload)
+            elif kind == "mcp_task" and session.mcp is not None:
+                session.mcp.rotate_record(payload)
             elif kind == "mcp_agent" and session.mcp is not None:
                 session.mcp.register(payload)
         # Sandbox fixtures and downstream workspaces are not durable; a restored session has neither.

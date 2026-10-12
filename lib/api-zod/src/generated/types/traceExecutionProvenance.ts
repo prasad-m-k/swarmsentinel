@@ -7,7 +7,7 @@
  */
 
 /**
- * Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.
+ * Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor's decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.
  */
 export type TraceExecutionProvenance = typeof TraceExecutionProvenance[keyof typeof TraceExecutionProvenance];
 
@@ -15,4 +15,5 @@ export type TraceExecutionProvenance = typeof TraceExecutionProvenance[keyof typ
 export const TraceExecutionProvenance = {
   'engine-observed': 'engine-observed',
   'caller-reported': 'caller-reported',
+  'egress-monitor-reported': 'egress-monitor-reported',
 } as const;

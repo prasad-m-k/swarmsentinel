@@ -100,7 +100,7 @@ export const TraceExecutionError = {
 } as const;
 
 /**
- * Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.
+ * Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor's decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.
  */
 export type TraceExecutionProvenance = typeof TraceExecutionProvenance[keyof typeof TraceExecutionProvenance];
 
@@ -108,6 +108,7 @@ export type TraceExecutionProvenance = typeof TraceExecutionProvenance[keyof typ
 export const TraceExecutionProvenance = {
   'engine-observed': 'engine-observed',
   'caller-reported': 'caller-reported',
+  'egress-monitor-reported': 'egress-monitor-reported',
 } as const;
 
 export type TraceSource = typeof TraceSource[keyof typeof TraceSource];
@@ -118,6 +119,7 @@ export const TraceSource = {
   'ai-village': 'ai-village',
   live: 'live',
   mcp: 'mcp',
+  egress: 'egress',
 } as const;
 
 export type TraceReads = typeof TraceReads[keyof typeof TraceReads];
@@ -170,10 +172,12 @@ export interface Trace {
   toolBodyExecuted?: boolean;
   /** Fixed safe error code only; no exception details or tool results. */
   executionError?: TraceExecutionError;
-  /** Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows. */
+  /** Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor's decision, not a gateway decision. Absent for unobserved, synthetic and historical rows. */
   executionProvenance?: TraceExecutionProvenance;
   policyVersion: number;
   source?: TraceSource;
+  /** Confidentiality labels (asp:<class>) the acting context held after this action */
+  labels?: string[];
   /** table:row-id in the source dataset */
   sourceRef?: string;
   detail?: string;
@@ -188,6 +192,8 @@ export interface Trace {
   contaminated?: boolean;
   /** Event id of the untrusted read this context descends from; empty if clean */
   taintOrigin?: string;
+  /** Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task */
+  taskId?: string;
   /** Spawn only: tool patterns delegated to the child */
   scope?: string[];
 }
@@ -519,6 +525,96 @@ export interface McpAgentCredential {
   credential: string;
   endpoint: string;
   decision: CallDecision;
+}
+
+export interface EgressResolveInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  credential: string;
+}
+
+export interface EgressIdentity {
+  sessionId: string;
+  agentId: string;
+  taskId: string;
+  labels: string[];
+  tainted: boolean;
+  revoked: boolean;
+}
+
+export type EgressDecisionInputVerdict = typeof EgressDecisionInputVerdict[keyof typeof EgressDecisionInputVerdict];
+
+
+export const EgressDecisionInputVerdict = {
+  allow: 'allow',
+  translate: 'translate',
+  hold: 'hold',
+  block: 'block',
+} as const;
+
+export type EgressDecisionInputApplied = typeof EgressDecisionInputApplied[keyof typeof EgressDecisionInputApplied];
+
+
+export const EgressDecisionInputApplied = {
+  allow: 'allow',
+  translate: 'translate',
+  hold: 'hold',
+  block: 'block',
+} as const;
+
+export type EgressDecisionInputMode = typeof EgressDecisionInputMode[keyof typeof EgressDecisionInputMode];
+
+
+export const EgressDecisionInputMode = {
+  report: 'report',
+  enforce: 'enforce',
+} as const;
+
+export interface EgressDecisionInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  sessionId: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  agentId: string;
+  /** @maxLength 200 */
+  taskId?: string;
+  verdict: EgressDecisionInputVerdict;
+  applied: EgressDecisionInputApplied;
+  mode: EgressDecisionInputMode;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  destination: string;
+  /** @maxLength 80 */
+  category?: string;
+  /** @maxItems 40 */
+  classes?: string[];
+  /** @maxItems 80 */
+  rules?: string[];
+  /** @maxLength 120 */
+  model?: string;
+  /** @nullable */
+  timestamp?: string | null;
+}
+
+export interface EgressEventAck {
+  eventId: string;
+}
+
+export interface McpTaskCredential {
+  agentId: string;
+  taskId: string;
+  /** Bearer credential for the MCP endpoint. Shown once; store it like a secret */
+  credential: string;
+  endpoint: string;
 }
 
 export type SessionInputPolicy = typeof SessionInputPolicy[keyof typeof SessionInputPolicy];

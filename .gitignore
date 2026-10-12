@@ -75,3 +75,8 @@ village-transcript.json
 
 # Office lock files
 ~$*
+
+# ACM TAISAP submission (manuscript, artifact, analysis): local only during double-anonymous review
+docs/source-materials/taisap-2026/
+*TAISAP*
+asp-artifact*.zip

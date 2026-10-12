@@ -1,0 +1,51 @@
+# Confinement lab: is the MCP proxy the agent's only route to side effects?
+#   docker compose -f deploy/confinement/docker-compose.yml --profile confined up --build --abort-on-container-exit
+#   docker compose -f deploy/confinement/docker-compose.yml --profile unconfined up --build --abort-on-container-exit
+name: asp-confinement
+services:
+  engine:
+    build: { context: ../.., dockerfile: deploy/confinement/Dockerfile.engine }
+    environment:
+      # Stands in for a downstream credential the engine holds; the agent must never see it.
+      DOWNSTREAM_API_TOKEN: lab-downstream-secret
+    volumes:
+      - agent-secrets:/run/agent-secrets
+      - operator:/run/operator
+    networks: [agentnet]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/swarm/health', timeout=2)"]
+      interval: 2s
+      retries: 30
+    profiles: [confined, unconfined]
+
+  agent:
+    build: { context: ../.., dockerfile: deploy/confinement/Dockerfile.agent }
+    environment: { PROFILE: confined }
+    volumes:
+      - agent-secrets:/run/agent-secrets:ro
+      - ./results:/results
+    networks: [agentnet]          # internal network: the engine is the only reachable host
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on: { engine: { condition: service_healthy } }
+    profiles: [confined]
+
+  agent-unconfined:
+    build: { context: ../.., dockerfile: deploy/confinement/Dockerfile.agent }
+    environment: { PROFILE: unconfined, RESULTS: /results/probe-unconfined.json }
+    volumes:
+      - agent-secrets:/run/agent-secrets:ro
+      - ./results:/results
+    networks: [agentnet, egress]  # control: same agent, plus an ordinary network with internet access
+    depends_on: { engine: { condition: service_healthy } }
+    profiles: [unconfined]
+
+networks:
+  agentnet: { internal: true }
+  egress: {}
+
+volumes:
+  agent-secrets: {}
+  operator: {}

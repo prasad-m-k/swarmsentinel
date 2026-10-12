@@ -37,7 +37,7 @@ class Event(BaseModel):
     intentVector: list[float]
     depth: int
     # Provenance and ASP evaluation inputs. Defaults keep synthetic samples valid.
-    source: Literal["synthetic", "ai-village", "live", "mcp"] = "synthetic"
+    source: Literal["synthetic", "ai-village", "live", "mcp", "egress"] = "synthetic"
     sourceRef: str = ""
     detail: str = ""
     network: str = ""
@@ -47,6 +47,9 @@ class Event(BaseModel):
     mentions: list[str] = []
     # Spawn only: tool patterns delegated to the child (inherit-and-restrict). Empty = inherit.
     scope: list[str] = []
+    # Task the action belongs to, under content-trust taint-scope "task". Set by the engine or a trusted
+    # controller, never chosen by an agent; empty means the agent's current task.
+    taskId: str = ""
 
 
 class Violation(BaseModel):
@@ -76,12 +79,14 @@ class Trace(Event):
     executionStatus: Optional[Literal["not-started", "succeeded", "failed"]] = None
     toolBodyExecuted: Optional[bool] = None
     executionError: Optional[Literal["tool_execution_failed"]] = None
-    executionProvenance: Optional[Literal["engine-observed", "caller-reported"]] = None
+    executionProvenance: Optional[Literal["engine-observed", "caller-reported", "egress-monitor-reported"]] = None
     policyVersion: int
     mode: Literal["enforce", "report-only"] = "enforce"
     violations: list[Violation] = []
     contaminated: bool = False
     taintOrigin: str = ""
+    # Confidentiality labels the acting context held after this action ("asp:<class>"); see policy confidentiality.
+    labels: list[str] = []
 
     def recorder_dump(self):
         """Keep legacy replay payloads unchanged; emit evidence only when known."""

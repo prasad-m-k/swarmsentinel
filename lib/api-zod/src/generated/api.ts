@@ -39,7 +39,8 @@ export const SimulateSwarmBody = zod.object({
 
 export const simulateSwarmResponseCompletionGraceSecondsMax = 86400;
 
-
+export const simulateSwarmResponseEventsItemLabelsDefault = [];
+export const simulateSwarmResponseEventsItemTaskIdDefault = ``;
 
 export const SimulateSwarmResponse = zod.object({
   "id": zod.string(),
@@ -75,9 +76,10 @@ export const SimulateSwarmResponse = zod.object({
   "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
   "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
-  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported', 'egress-monitor-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor\'s decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp', 'egress']).optional(),
+  "labels": zod.array(zod.string()).default(simulateSwarmResponseEventsItemLabelsDefault).describe('Confidentiality labels (asp:<class>) the acting context held after this action'),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -94,6 +96,7 @@ export const SimulateSwarmResponse = zod.object({
 })).optional(),
   "contaminated": zod.boolean().optional(),
   "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "taskId": zod.string().default(simulateSwarmResponseEventsItemTaskIdDefault).describe('Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task'),
   "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })),
   "alerts": zod.array(zod.object({
@@ -466,6 +469,100 @@ export const MintSwarmMcpAgentResponse = zod.object({
 
 
 /**
+ * Retires the agent's current credential and binds a new one to a new task. Under the policy's content-trust taint-scope "task", taint is kept per (agent, task), so the new task starts clean while descendants spawned in the old task keep its taint. Only the session owner (operator role) can do this; agents cannot open tasks. See docs/mcp-proxy.md.
+ * @summary Start a new task for an MCP agent and issue a new credential
+ */
+export const RotateSwarmMcpTaskParams = zod.object({
+  "sessionId": zod.coerce.string(),
+  "agentId": zod.coerce.string()
+})
+
+export const RotateSwarmMcpTaskResponse = zod.object({
+  "agentId": zod.string(),
+  "taskId": zod.string(),
+  "credential": zod.string().describe('Bearer credential for the MCP endpoint. Shown once; store it like a secret'),
+  "endpoint": zod.string()
+})
+
+
+/**
+ * For a monitor on the model-API path. Returns the engine-issued identity, current task, confidentiality labels, taint and revocation of the agent holding the credential. Requires the X-Egress-Secret header (SWARM_EGRESS_SECRET); disabled when that variable is unset; loopback callers only unless SWARM_EGRESS_REMOTE=true. See docs/egress-monitor.md.
+ * @summary Resolve an agent's MCP credential for an egress monitor
+ */
+export const ResolveSwarmEgressIdentityHeader = zod.object({
+  "X-Egress-Secret": zod.string()
+})
+
+export const resolveSwarmEgressIdentityBodyCredentialMax = 200;
+
+
+
+export const ResolveSwarmEgressIdentityBody = zod.object({
+  "credential": zod.string().min(1).max(resolveSwarmEgressIdentityBodyCredentialMax)
+})
+
+export const ResolveSwarmEgressIdentityResponse = zod.object({
+  "sessionId": zod.string(),
+  "agentId": zod.string(),
+  "taskId": zod.string(),
+  "labels": zod.array(zod.string()),
+  "tainted": zod.boolean(),
+  "revoked": zod.boolean()
+})
+
+
+/**
+ * Content-free: classes, rules, verdict, destination and model name only. Recorded as an observed, out-of-band row with executionProvenance egress-monitor-reported. Same authentication as resolve.
+ * @summary Record an egress monitor's decision in the session recorder
+ */
+export const RecordSwarmEgressEventHeader = zod.object({
+  "X-Egress-Secret": zod.string()
+})
+
+export const recordSwarmEgressEventBodySessionIdMax = 120;
+
+export const recordSwarmEgressEventBodyAgentIdMax = 120;
+
+export const recordSwarmEgressEventBodyTaskIdDefault = ``;
+export const recordSwarmEgressEventBodyTaskIdMax = 200;
+
+export const recordSwarmEgressEventBodyDestinationMax = 255;
+
+export const recordSwarmEgressEventBodyCategoryDefault = ``;
+export const recordSwarmEgressEventBodyCategoryMax = 80;
+
+export const recordSwarmEgressEventBodyClassesDefault = [];
+export const recordSwarmEgressEventBodyClassesMax = 40;
+
+export const recordSwarmEgressEventBodyRulesDefault = [];
+export const recordSwarmEgressEventBodyRulesMax = 80;
+
+export const recordSwarmEgressEventBodyModelDefault = ``;
+export const recordSwarmEgressEventBodyModelMax = 120;
+
+
+
+export const RecordSwarmEgressEventBody = zod.object({
+  "sessionId": zod.string().min(1).max(recordSwarmEgressEventBodySessionIdMax),
+  "agentId": zod.string().min(1).max(recordSwarmEgressEventBodyAgentIdMax),
+  "taskId": zod.string().max(recordSwarmEgressEventBodyTaskIdMax).default(recordSwarmEgressEventBodyTaskIdDefault),
+  "verdict": zod.enum(['allow', 'translate', 'hold', 'block']),
+  "applied": zod.enum(['allow', 'translate', 'hold', 'block']),
+  "mode": zod.enum(['report', 'enforce']),
+  "destination": zod.string().min(1).max(recordSwarmEgressEventBodyDestinationMax),
+  "category": zod.string().max(recordSwarmEgressEventBodyCategoryMax).default(recordSwarmEgressEventBodyCategoryDefault),
+  "classes": zod.array(zod.string()).max(recordSwarmEgressEventBodyClassesMax).default(recordSwarmEgressEventBodyClassesDefault),
+  "rules": zod.array(zod.string()).max(recordSwarmEgressEventBodyRulesMax).default(recordSwarmEgressEventBodyRulesDefault),
+  "model": zod.string().max(recordSwarmEgressEventBodyModelMax).default(recordSwarmEgressEventBodyModelDefault),
+  "timestamp": zod.string().nullish()
+})
+
+export const RecordSwarmEgressEventResponse = zod.object({
+  "eventId": zod.string()
+})
+
+
+/**
  * The owner must supply the session-bound completionToken returned by evaluate and the exact event, actor and span. Only one terminal receipt is accepted. Refused calls, non-tools, sandbox executions, and duplicate or contradictory receipts cannot be updated. No results or error text are accepted. This is caller-reported evidence, not engine observation or proof of side effects.
  * @summary Record caller-reported completion of an allowed permission-only tool
  */
@@ -490,6 +587,9 @@ export const CompleteSwarmToolBody = zod.object({
   "executionStatus": zod.enum(['succeeded', 'failed'])
 })
 
+export const completeSwarmToolResponseLabelsDefault = [];
+export const completeSwarmToolResponseTaskIdDefault = ``;
+
 export const CompleteSwarmToolResponse = zod.object({
   "id": zod.string(),
   "timestamp": zod.string(),
@@ -510,9 +610,10 @@ export const CompleteSwarmToolResponse = zod.object({
   "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
   "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
-  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported', 'egress-monitor-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor\'s decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp', 'egress']).optional(),
+  "labels": zod.array(zod.string()).default(completeSwarmToolResponseLabelsDefault).describe('Confidentiality labels (asp:<class>) the acting context held after this action'),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -529,6 +630,7 @@ export const CompleteSwarmToolResponse = zod.object({
 })).optional(),
   "contaminated": zod.boolean().optional(),
   "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "taskId": zod.string().default(completeSwarmToolResponseTaskIdDefault).describe('Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task'),
   "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })
 
@@ -594,7 +696,8 @@ export const GetSwarmSessionParams = zod.object({
 
 export const getSwarmSessionResponseCompletionGraceSecondsMax = 86400;
 
-
+export const getSwarmSessionResponseEventsItemLabelsDefault = [];
+export const getSwarmSessionResponseEventsItemTaskIdDefault = ``;
 
 export const GetSwarmSessionResponse = zod.object({
   "id": zod.string(),
@@ -630,9 +733,10 @@ export const GetSwarmSessionResponse = zod.object({
   "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
   "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
-  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported', 'egress-monitor-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor\'s decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp', 'egress']).optional(),
+  "labels": zod.array(zod.string()).default(getSwarmSessionResponseEventsItemLabelsDefault).describe('Confidentiality labels (asp:<class>) the acting context held after this action'),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -649,6 +753,7 @@ export const GetSwarmSessionResponse = zod.object({
 })).optional(),
   "contaminated": zod.boolean().optional(),
   "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "taskId": zod.string().default(getSwarmSessionResponseEventsItemTaskIdDefault).describe('Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task'),
   "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })),
   "alerts": zod.array(zod.object({
@@ -740,7 +845,8 @@ export const GetSwarmDemoSessionParams = zod.object({
 
 export const getSwarmDemoSessionResponseCompletionGraceSecondsMax = 86400;
 
-
+export const getSwarmDemoSessionResponseEventsItemLabelsDefault = [];
+export const getSwarmDemoSessionResponseEventsItemTaskIdDefault = ``;
 
 export const GetSwarmDemoSessionResponse = zod.object({
   "id": zod.string(),
@@ -776,9 +882,10 @@ export const GetSwarmDemoSessionResponse = zod.object({
   "executionStatus": zod.enum(['not-started', 'succeeded', 'failed']).optional().describe('Tool outcome with separate provenance. Absent when no outcome is known; never inferred from authorization.'),
   "toolBodyExecuted": zod.boolean().optional().describe('Body entry evidence; caller-reported when executionProvenance is caller-reported. Not proof of success or side effects.'),
   "executionError": zod.enum(['tool_execution_failed']).optional().describe('Fixed safe error code only; no exception details or tool results.'),
-  "executionProvenance": zod.enum(['engine-observed', 'caller-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. Absent for unobserved, synthetic and historical rows.'),
+  "executionProvenance": zod.enum(['engine-observed', 'caller-reported', 'egress-monitor-reported']).optional().describe('Caller-reported completion is an owner assertion, not engine-observed execution. egress-monitor-reported rows record a model-API monitor\'s decision, not a gateway decision. Absent for unobserved, synthetic and historical rows.'),
   "policyVersion": zod.number().int(),
-  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp']).optional(),
+  "source": zod.enum(['synthetic', 'ai-village', 'live', 'mcp', 'egress']).optional(),
+  "labels": zod.array(zod.string()).default(getSwarmDemoSessionResponseEventsItemLabelsDefault).describe('Confidentiality labels (asp:<class>) the acting context held after this action'),
   "sourceRef": zod.string().optional().describe('table:row-id in the source dataset'),
   "detail": zod.string().optional(),
   "network": zod.string().optional(),
@@ -795,6 +902,7 @@ export const GetSwarmDemoSessionResponse = zod.object({
 })).optional(),
   "contaminated": zod.boolean().optional(),
   "taintOrigin": zod.string().optional().describe('Event id of the untrusted read this context descends from; empty if clean'),
+  "taskId": zod.string().default(getSwarmDemoSessionResponseEventsItemTaskIdDefault).describe('Task the action was evaluated in (content-trust taint-scope task); empty when the agent has no controller-opened task'),
   "scope": zod.array(zod.string()).optional().describe('Spawn only: tool patterns delegated to the child')
 })),
   "alerts": zod.array(zod.object({

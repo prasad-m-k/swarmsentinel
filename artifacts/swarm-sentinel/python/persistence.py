@@ -107,6 +107,9 @@ class StateStore:
     def add_credential(self, digest, session_id, agent_id):
         self._write("INSERT INTO credentials VALUES (?, ?, ?)", (digest, session_id, agent_id))
 
+    def remove_credential(self, digest):
+        self._write("DELETE FROM credentials WHERE digest = ?", (digest,))
+
     def credential(self, digest):
         with self.lock:
             row = self.db.execute("SELECT session_id, agent_id FROM credentials WHERE digest = ?", (digest,)).fetchone()

@@ -5,7 +5,9 @@ import sqlite3
 import zlib
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+_HERE = Path(__file__).resolve()
+# The repository root when run from a checkout; the engine directory when the code is unpacked elsewhere.
+REPO_ROOT = _HERE.parents[4] if len(_HERE.parents) > 4 else _HERE.parents[1]
 DATA_DIR = Path(os.environ.get("SWARMSENTINEL_DATA_DIR", REPO_ROOT / "data" / "ai-village"))
 DB_PATH = DATA_DIR / "village.sqlite"
 

@@ -69,7 +69,16 @@ A tool the policy does not declare is never listed and never dispatched, even if
 
 **Outcome evidence.** The engine sees the downstream response, so every proxied tool row carries `executionProvenance: engine-observed`. A result with `isError: true` and a transport failure are both recorded as `failed` with the fixed `tool_execution_failed` code. The downstream result is returned to the agent unchanged. The engine records that the server answered; it cannot verify what the server did.
 
-**Taint.** A tool declared `reads: untrusted` taints the calling span and, as in `/execute`, the actor and its descendants. Content is not inspected (gap G4 still applies). Cross-agent propagation needs messages to pass through the engine; a proxy-hosted `swarm.send_message` tool is planned for that (phase 2).
+**Taint.** A tool declared `reads: untrusted` taints the calling span and, as in `/execute`, the actor and its descendants. Optional result inspection (`content-inspection.md`) can also taint the reader when injection markers appear; it is pattern-based, so gap G4 still applies. Cross-agent propagation needs messages to pass through the engine; a proxy-hosted `swarm.send_message` tool is planned for that (phase 2).
+
+**Task-scoped taint.** With `"taint-scope": "task"` in the policy's `content-trust` section, taint is kept per (agent, task) instead of per agent. Each credential is one task, and only the credential issuer opens tasks, so an agent cannot reach a clean context by inventing a span. `POST /api/swarm/sessions/{id}/mcp/agents/{agentId}/task` (operator role) retires the agent's credential and issues a new one bound to a new task, which starts clean; agents spawned in the old task keep its taint. That call is the controller's explicit declassification step.
+
+Operating task boundaries. Task scope is only as safe as the controller's task lifecycle, because opening a task declassifies:
+
+1. Only an operator opens tasks. Rotation needs the operator or administrator role; an agent's MCP credential cannot authenticate to the owner API.
+2. Open a task at a boundary set by a principal outside the agent (a new assignment from a person or a scheduler), never because the agent asks or is blocked by a withdrawn capability. Do not automate rotation on agent request.
+3. Before rotating an agent whose task is tainted or labelled, review what the task read: the `taintOrigin` and `labels` on its recorder rows. Children spawned in the old task keep its taint and labels regardless.
+4. Split long-running work into tasks at natural boundaries, and watch the share of tainted and labelled tasks during report-only operation before enforcing. Rotation is journaled, so durable sessions restore it. The default scope, `actor`, keeps the earlier behaviour. On the AI Village replay, task scope with scaffold sessions as tasks flags 43.8% of shared-state writes, the same as span-level taint, against 79.1% for agent-level taint.
 
 ## Feasibility
 
