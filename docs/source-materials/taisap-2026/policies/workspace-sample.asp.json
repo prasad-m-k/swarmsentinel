@@ -1,0 +1,130 @@
+{
+  "asp-version": "1.0",
+  "description": "Test policy for the sample workspace MCP server. Small limits so every gateway check can be reached in a few calls. {tests} is filled in by the test harness.",
+  "network": {
+    "default": "deny",
+    "allow": [
+      "docs.example.org",
+      "*.example.org"
+    ]
+  },
+  "tools": {
+    "default": "deny",
+    "allow": [
+      "mcp:files:read",
+      "mcp:files:write",
+      "mcp:web:get",
+      "mcp:mail:send",
+      "mcp:tickets:post",
+      "mcp:shell:*"
+    ],
+    "deny": [
+      "mcp:shell:exec"
+    ],
+    "deny-arguments": [
+      {
+        "tool": "mcp:files:*",
+        "pattern": "\\.\\./",
+        "label": "path traversal"
+      },
+      {
+        "tool": "mcp:files:*",
+        "pattern": "\\.env\\b|id_rsa",
+        "label": "secret file"
+      },
+      {
+        "tool": "mcp:mail:send",
+        "pattern": "\"to\": \"[^\"]*@(?!example\\.org\")",
+        "label": "mail to an external domain"
+      }
+    ]
+  },
+  "content-trust": {
+    "system-prompt": "high",
+    "user-input": "medium",
+    "tool-response": "low",
+    "retrieved-document": "untrusted",
+    "contaminated-write": "deny",
+    "contaminated-deny": [
+      "mcp:mail:*"
+    ],
+    "propagate-via-messages": true
+  },
+  "delegation": {
+    "sub-agents": "inherit-and-restrict",
+    "max-depth": 2
+  },
+  "reporting": {
+    "violations": "local:flight-recorder"
+  },
+  "swarm": {
+    "window-seconds": 60,
+    "repeated-intent": {
+      "limit": 3,
+      "min-agents": 3,
+      "actions": [
+        "tool"
+      ]
+    },
+    "write-cap": 3,
+    "step-budget": 10,
+    "tripwires": {
+      "fanout-children": 6,
+      "shared-state-agents": 3,
+      "consensus-min-cluster": 3,
+      "consensus-density": 0.5,
+      "echo-agents": 0,
+      "echo-similarity": 0.6,
+      "taint-agents": 0,
+      "delegation-loop": false
+    }
+  },
+  "mcp": {
+    "servers": {
+      "workspace": {
+        "command": "{python}",
+        "args": [
+          "{tests}/mcp_sample/workspace_server.py",
+          "--root",
+          "{workspace}"
+        ],
+        "tools": {
+          "read_file": {
+            "target": "mcp:files:read",
+            "write": false
+          },
+          "write_file": {
+            "target": "mcp:files:write",
+            "write": true,
+            "resource": "mcp:files"
+          },
+          "delete_file": {
+            "target": "mcp:files:delete",
+            "write": true,
+            "resource": "mcp:files"
+          },
+          "http_get": {
+            "target": "mcp:web:get",
+            "write": false,
+            "reads": "untrusted",
+            "network-argument": "url"
+          },
+          "send_email": {
+            "target": "mcp:mail:send",
+            "write": true,
+            "resource": "mcp:outbox"
+          },
+          "post_ticket": {
+            "target": "mcp:tickets:post",
+            "write": true,
+            "resource": "mcp:tickets"
+          },
+          "run_command": {
+            "target": "mcp:shell:exec",
+            "write": true
+          }
+        }
+      }
+    }
+  }
+}

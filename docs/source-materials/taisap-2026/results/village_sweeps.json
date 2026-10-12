@@ -1,0 +1,537 @@
+{
+  "consensus-density=0.5": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 2105,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 1985,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 1744,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 4010
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 133,
+    "decisions": {
+      "allow": 1126252,
+      "drop": 95728,
+      "observed": 9992,
+      "throttle": 1744
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04949492044414168,
+      "min": 0.0010403329065300896,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 551,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 10865
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 339,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 2846
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 1215,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 83761
+      }
+    },
+    "seconds": 50.4,
+    "untrusted_reads": 131564,
+    "would_block": 97472,
+    "writes": 101332
+  },
+  "consensus-density=0.8": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 282,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 162,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 1744,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 4010
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 243,
+    "decisions": {
+      "allow": 1126252,
+      "drop": 95728,
+      "observed": 9992,
+      "throttle": 1744
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04949492044414168,
+      "min": 0.0010403329065300896,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 94,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 10865
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 54,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 2846
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 134,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 83761
+      }
+    },
+    "seconds": 89.9,
+    "untrusted_reads": 131564,
+    "would_block": 97472,
+    "writes": 101332
+  },
+  "days_in_store": 389,
+  "export": null,
+  "propagate": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 996,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 876,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 1744,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 4010
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 160,
+    "decisions": {
+      "allow": 1126252,
+      "drop": 95728,
+      "observed": 9992,
+      "throttle": 1744
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04949492044414168,
+      "min": 0.0010403329065300896,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 343,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 10865
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 178,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 2846
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 475,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 83761
+      }
+    },
+    "seconds": 474.2,
+    "taint_propagation": {
+      "days": 389,
+      "days_majority_tainted": 0,
+      "mean_fraction_tainted": 0.0,
+      "median_minutes_to_majority": null,
+      "p25": null,
+      "p75": null
+    },
+    "untrusted_reads": 131564,
+    "would_block": 97472,
+    "writes": 101332
+  },
+  "repeated-intent=3": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 996,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 876,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 2353,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 4008
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 160,
+    "decisions": {
+      "allow": 1125645,
+      "drop": 95726,
+      "observed": 9992,
+      "throttle": 2353
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04949295667445172,
+      "min": 0.001120358514724712,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 343,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 11051
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 178,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 3019
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 475,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 84009
+      }
+    },
+    "seconds": 286.5,
+    "untrusted_reads": 131564,
+    "would_block": 98079,
+    "writes": 101332
+  },
+  "repeated-intent=8": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 996,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 876,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 909,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 4010
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 160,
+    "decisions": {
+      "allow": 1127087,
+      "drop": 95728,
+      "observed": 9992,
+      "throttle": 909
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04689799346967134,
+      "min": 0.0010403329065300896,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 343,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 10448
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 178,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 2672
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 475,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 83517
+      }
+    },
+    "seconds": 124.1,
+    "untrusted_reads": 131564,
+    "would_block": 96637,
+    "writes": 101332
+  },
+  "write-cap=24": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 996,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 876,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 1744,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 803
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 160,
+    "decisions": {
+      "allow": 1129459,
+      "drop": 92521,
+      "observed": 9992,
+      "throttle": 1744
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.390147446538424,
+      "median": 0.04695595145420292,
+      "min": 0.0010403329065300896,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 343,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 10714
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 178,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 2379
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 475,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 81172
+      }
+    },
+    "seconds": 273.0,
+    "untrusted_reads": 131564,
+    "would_block": 94265,
+    "writes": 101332
+  },
+  "write-cap=6": {
+    "actions": {
+      "message": 183485,
+      "tool": 1050231
+    },
+    "agents": 46,
+    "alert_total": 996,
+    "alerts": {
+      "echo_cascade": 7,
+      "rapid_consensus": 876,
+      "shared_state_loop": 113
+    },
+    "arg_label_agent_counts": {
+      "credential store access": 22,
+      "environment secret disclosure": 29,
+      "force push to shared history": 26,
+      "remote script piped to shell": 5
+    },
+    "arg_labels": {
+      "credential store access": 4681,
+      "environment secret disclosure": 384,
+      "force push to shared history": 439,
+      "remote script piped to shell": 8
+    },
+    "by_rule": {
+      "network.default_deny": 86206,
+      "semantic.identical_intent": 1742,
+      "tools.deny_arguments": 5512,
+      "tools.write_cap": 12888
+    },
+    "contaminated_writes": 44430,
+    "days": 389,
+    "days_without_alert": 160,
+    "decisions": {
+      "allow": 1117376,
+      "drop": 104606,
+      "observed": 9992,
+      "throttle": 1742
+    },
+    "events": 1233716,
+    "network_events": 246783,
+    "per_agent_would_block_rate": {
+      "max": 0.39258861439312565,
+      "median": 0.06109566707358635,
+      "min": 0.001120358514724712,
+      "n": 46
+    },
+    "periods": {
+      "P1 (before 2026-02-10)": {
+        "alerts": 343,
+        "credential_reads": 73,
+        "days": 229,
+        "events": 170813,
+        "would_block": 11110
+      },
+      "P2 (2026-02-10 to 2026-03-23)": {
+        "alerts": 178,
+        "credential_reads": 10,
+        "days": 30,
+        "events": 147809,
+        "would_block": 4264
+      },
+      "P3 (from 2026-03-24)": {
+        "alerts": 475,
+        "credential_reads": 4598,
+        "days": 130,
+        "events": 915094,
+        "would_block": 90974
+      }
+    },
+    "seconds": 61.5,
+    "untrusted_reads": 131564,
+    "would_block": 106348,
+    "writes": 101332
+  }
+}

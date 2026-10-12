@@ -1,0 +1,98 @@
+{
+  "steps": [
+    {
+      "id": "E1",
+      "step": "clean agent sends a model request",
+      "expected": "forwarded",
+      "observed": "forwarded",
+      "ok": true
+    },
+    {
+      "id": "E2",
+      "step": "agent reads a secret through the MCP proxy; engine labels its task",
+      "expected": [
+        "credentials"
+      ],
+      "observed": [
+        "credentials"
+      ],
+      "ok": true
+    },
+    {
+      "id": "E3",
+      "step": "same agent's next model request",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E4",
+      "step": "model request without a credential",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E5",
+      "step": "model request with a forged credential",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E6",
+      "step": "child spawned from the labelled task sends a model request",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E7",
+      "step": "owner opens a new task for the agent (declassify); new credential",
+      "expected": "forwarded",
+      "observed": "forwarded",
+      "ok": true
+    },
+    {
+      "id": "E8",
+      "step": "retired credential of the labelled task",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E9",
+      "step": "SwarmSentinel revokes the agent; its model request",
+      "expected": "refused",
+      "observed": "refused",
+      "ok": true
+    },
+    {
+      "id": "E10",
+      "step": "engine recorder holds one egress row per identified decision",
+      "expected": 5,
+      "observed": {
+        "rows": 5,
+        "refused": 3,
+        "provenance": [
+          "egress-monitor-reported"
+        ]
+      },
+      "ok": true
+    }
+  ],
+  "latency": {
+    "with_engine_resolution": {
+      "p50": 1.9642709521576762,
+      "p95": 2.5159019278362393,
+      "p99": 3.283958872780204,
+      "n": 1000
+    },
+    "labels_in_header": {
+      "p50": 0.6323123816400766,
+      "p95": 1.0988019173964858,
+      "p99": 2.635697915684432,
+      "n": 1000
+    }
+  }
+}
